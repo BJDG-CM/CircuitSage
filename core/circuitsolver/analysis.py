@@ -112,6 +112,174 @@ def pole_zero(tf: TransferFunction) -> PoleZeroResult:
     )
 
 
+# --- Routh–Hurwitz stability (design §4.6) ---------------------------------
+
+_EPS = sp.Symbol("epsilon", positive=True)
+
+
+@dataclass(frozen=True)
+class StabilityResult:
+    """Two-stage output (design §4.6): a definite verdict when every
+    first-column sign is decidable, otherwise verdict="conditional" with
+    the positivity conditions as first-class results.
+
+    verdict: "stable" | "unstable" | "marginal" | "conditional"
+    method:  "routh" | "numeric"
+    conditions: inequalities (entry > 0) whose truth decides stability;
+        they assume the characteristic polynomial is normalized to a
+        positive leading coefficient.
+    """
+
+    verdict: str
+    method: str
+    conditions: tuple[sp.Rel, ...] = ()
+    routh_table: tuple[tuple[sp.Expr, ...], ...] | None = None
+    notes: tuple[str, ...] = ()
+
+
+def _pad(row: list[sp.Expr], width: int) -> list[sp.Expr]:
+    return list(row) + [sp.Integer(0)] * (width - len(row))
+
+
+def _fix_special_rows(rows: list[list[sp.Expr]], index: int, n: int, width: int,
+                      notes: list[str]) -> bool:
+    """Apply Routh special-case handling to rows[index] in place.
+
+    Returns True if a full zero row was replaced (marginal candidate).
+    Zero row → derivative of the auxiliary polynomial built from the row
+    above; zero pivot with nonzero row → epsilon (0+) substitution.
+    """
+    row = rows[index]
+    if all(entry.is_zero for entry in row):
+        power_above = n - index + 1
+        replacement: list[sp.Expr] = []
+        for j, coeff in enumerate(rows[index - 1]):
+            power = power_above - 2 * j
+            if power >= 1:
+                replacement.append(coeff * power)
+        rows[index] = _pad(replacement, width)
+        notes.append(
+            f"s^{n - index} 행이 전부 0 — 보조 다항식의 도함수로 대체 (jω축 근 후보)"
+        )
+        return True
+    if row[0].is_zero:
+        row[0] = _EPS
+        notes.append(f"s^{n - index} 행의 첫 열이 0 — ε(0+) 치환")
+    return False
+
+
+def routh_table(poly: sp.Poly) -> tuple[list[list[sp.Expr]], list[str], bool]:
+    """Build the full Routh array for a polynomial in s.
+
+    Returns (rows, notes, had_zero_row); rows[k] corresponds to s^(n-k).
+    """
+    n = poly.degree()
+    coeffs = poly.all_coeffs()
+    width = n // 2 + 1
+    rows: list[list[sp.Expr]] = [_pad(coeffs[0::2], width)]
+    if n >= 1:
+        rows.append(_pad(coeffs[1::2], width))
+    notes: list[str] = []
+    had_zero_row = False
+
+    for k in range(2, n + 1):
+        had_zero_row |= _fix_special_rows(rows, k - 1, n, width, notes)
+        prev, prev2 = rows[k - 1], rows[k - 2]
+        new_row = [
+            sp.cancel((prev[0] * prev2[j + 1] - prev2[0] * prev[j + 1]) / prev[0])
+            for j in range(width - 1)
+        ]
+        rows.append(_pad(new_row, width))
+    return rows, notes, had_zero_row
+
+
+def _first_column_sign(entry: sp.Expr) -> int | None:
+    """Sign of a first-column entry; None if undecidable symbolically.
+
+    Entries containing ε are evaluated in the limit ε → 0+, scaling by
+    powers of ε until the limit resolves.
+    """
+    if entry.has(_EPS):
+        for order in range(3):
+            limit = sp.limit(entry / _EPS**order, _EPS, 0, "+")
+            # is_extended_* covers ±oo, which plain is_positive/negative excludes
+            if limit.is_extended_positive:
+                return 1
+            if limit.is_extended_negative:
+                return -1
+            if limit != 0:
+                return None
+        return None
+    factored = sp.factor(entry)
+    if factored.is_zero:
+        return 0
+    if factored.is_positive:
+        return 1
+    if factored.is_negative:
+        return -1
+    return None
+
+
+def routh_stability(poly: sp.Poly) -> StabilityResult:
+    """Routh–Hurwitz verdict for an arbitrary polynomial in s."""
+    if poly.LC().is_negative:
+        poly = sp.Poly(-poly.as_expr(), s)
+    rows, notes, had_zero_row = routh_table(poly)
+    table = tuple(tuple(row) for row in rows)
+    first_column = [row[0] for row in rows]
+    signs = [_first_column_sign(entry) for entry in first_column]
+
+    if None in signs:
+        conditions = tuple(
+            sp.Gt(entry, 0)
+            for entry, sign in zip(first_column, signs)
+            if sign is None
+        )
+        notes.append("부호 미확정 원소 존재 — 아래 조건이 모두 성립하면 안정")
+        return StabilityResult(
+            verdict="conditional", method="routh",
+            conditions=conditions, routh_table=table, notes=tuple(notes),
+        )
+
+    nonzero = [sign for sign in signs if sign != 0]
+    changes = sum(1 for a, b in zip(nonzero, nonzero[1:]) if a != b)
+    if changes > 0:
+        notes.append(f"첫 열 부호 변화 {changes}회 → 우반평면 근 {changes}개")
+        verdict = "unstable"
+    elif had_zero_row or 0 in signs:
+        verdict = "marginal"
+    else:
+        verdict = "stable"
+    return StabilityResult(
+        verdict=verdict, method="routh", routh_table=table, notes=tuple(notes)
+    )
+
+
+def stability(tf: TransferFunction) -> StabilityResult:
+    """Stability of H(s) (design §4.6): direct max Re(p) check when the
+    denominator is numeric, Routh–Hurwitz otherwise."""
+    poly = sp.Poly(tf.denominator, s)
+    if poly.degree() <= 0:
+        return StabilityResult(
+            verdict="stable", method="numeric",
+            notes=("분모가 상수 — 동특성 없음",),
+        )
+    if not (poly.free_symbols - {s}):
+        tolerance = 1e-9
+        real_parts = [complex(root).real for root in poly.nroots()]
+        if max(real_parts) > tolerance:
+            verdict = "unstable"
+        elif max(real_parts) >= -tolerance:
+            verdict = "marginal"
+        else:
+            verdict = "stable"
+        return StabilityResult(
+            verdict=verdict, method="numeric",
+            notes=(f"max Re(p) = {max(real_parts):.6g}",),
+        )
+    return routh_stability(poly)
+
+
 def transfer_function(circuit: Circuit) -> TransferFunction:
     """Compute H(s) as specified by the netlist's .out directive.
 
