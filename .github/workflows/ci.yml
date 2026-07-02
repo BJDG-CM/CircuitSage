@@ -26,3 +26,20 @@ jobs:
 
       - name: Run api tests
         run: python -m pytest api/tests -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install and build frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
