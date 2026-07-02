@@ -17,7 +17,7 @@ from .circuit import SOURCE_TYPES, Circuit
 from .errors import CircuitError, SingularMatrixError
 from .graph import GROUND, validate_topology
 from .initial import expand_initial_conditions
-from .mna import MNASystem, assemble
+from .mna import MNASystem, assemble, s
 
 
 def _lusolve(system: MNASystem) -> sp.Matrix:
@@ -55,6 +55,61 @@ class TransferFunction:
     denominator: sp.Expr  # characteristic polynomial of the circuit
     output_node: str
     input_source: str
+
+
+@dataclass(frozen=True)
+class RootSet:
+    """Roots of one polynomial: ((value, multiplicity), ...).
+
+    complete=False means closed-form extraction failed (symbolic
+    coefficients of degree > 4, or no closed form): per design §4.6 the
+    caller should report "computable after numeric substitution".
+    """
+
+    roots: tuple[tuple[sp.Expr, int], ...]
+    complete: bool
+
+    @property
+    def values(self) -> tuple[sp.Expr, ...]:
+        return tuple(root for root, _ in self.roots)
+
+
+@dataclass(frozen=True)
+class PoleZeroResult:
+    poles: RootSet
+    zeros: RootSet
+
+
+def _root_set(expr: sp.Expr) -> RootSet:
+    poly = sp.Poly(expr, s)
+    degree = poly.degree()
+    if degree <= 0:
+        return RootSet(roots=(), complete=True)
+
+    symbolic = bool(poly.free_symbols - {s})
+    found: dict[sp.Expr, int] = {}
+    if not symbolic or degree <= 4:
+        try:
+            found = sp.roots(poly)
+        except (sp.PolynomialError, NotImplementedError):
+            found = {}
+    if sum(found.values()) == degree:
+        return RootSet(roots=tuple(found.items()), complete=True)
+
+    if not symbolic:
+        numeric = poly.nroots()
+        return RootSet(roots=tuple((root, 1) for root in numeric), complete=True)
+    return RootSet(roots=tuple(found.items()), complete=False)
+
+
+def pole_zero(tf: TransferFunction) -> PoleZeroResult:
+    """Poles/zeros of H(s) per design §4.6: exact closed forms where
+    feasible (always for numeric coefficients, degree ≤ 4 for symbolic),
+    numeric nroots() as the numeric fallback."""
+    return PoleZeroResult(
+        poles=_root_set(tf.denominator),
+        zeros=_root_set(tf.numerator),
+    )
 
 
 def transfer_function(circuit: Circuit) -> TransferFunction:
