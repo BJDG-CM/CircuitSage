@@ -28,7 +28,7 @@ from .circuit import Circuit, ComponentType
 from .errors import InverseLaplaceError
 from .graph import GROUND, validate_topology
 from .initial import expand_initial_conditions
-from .mna import MNASystem, assemble
+from .mna import MNASystem, assemble, replay_checkpoints
 from .verify import VerificationReport
 
 _KIND_KO = {
@@ -85,22 +85,14 @@ def _stamp_lines(system: MNASystem) -> list[dict]:
 
 def _checkpoints(system: MNASystem) -> list[dict]:
     """체크포인트에서만 전체 행렬을 렌더링 (ADR-7): 첫 소자, 중간, 최종."""
-    count = len(system.records)
-    targets = sorted({0, count // 2, count - 1})
-    size = system.A.shape[0]
-    running = sp.zeros(size, size)
-    checkpoints = []
-    for index, record in enumerate(system.records):
-        for entry in record.entries:
-            if entry.target == "A":
-                running[entry.row, entry.col] += entry.term
-        if index in targets:
-            label = f"{_text(record.component)} 스탬프까지 적용한 뒤:"
-            checkpoints.append({"label": label, "matrix": sp.latex(running)})
-    return checkpoints
+    return [
+        {"label": f"{_text(name)} 스탬프까지 적용한 뒤:", "matrix": sp.latex(matrix)}
+        for name, matrix in replay_checkpoints(system)
+    ]
 
 
-def _routh_latex(table) -> str | None:
+def routh_array_latex(table) -> str | None:
+    """Routh 표 → LaTeX array (report와 API 응답이 공용)."""
     if table is None:
         return None
     body = r" \\ ".join(
@@ -187,7 +179,7 @@ def generate_report(
             {"value": sp.latex(root), "mult": mult} for root, mult in pz.zeros.roots
         ],
         "poles_complete": pz.poles.complete,
-        "routh_latex": _routh_latex(stab.routh_table),
+        "routh_latex": routh_array_latex(stab.routh_table),
         "stability_text": _VERDICT_KO.get(stab.verdict, stab.verdict),
         "stability_method": "Routh–Hurwitz" if stab.method == "routh" else "수치 극점",
         "stability_conditions": [sp.latex(cond) for cond in stab.conditions],

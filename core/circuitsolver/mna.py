@@ -12,7 +12,7 @@ IC= must be transformed by initial.py (Phase 2) before assembly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, Sequence
 
 import sympy as sp
 
@@ -87,6 +87,32 @@ def _stamp_entries(
         # SPICE convention: positive current flows n+ → n- through the source.
         yield ("z", p, None, -comp.value)
         yield ("z", m, None, comp.value)
+
+
+def replay_checkpoints(
+    system: MNASystem, targets: Sequence[int] | None = None
+) -> list[tuple[str, sp.Matrix]]:
+    """Rebuild A at checkpoint indices from the stamp deltas (ADR-7).
+
+    Default checkpoints: first component, middle, last (= final matrix).
+    Returns (component name, matrix snapshot after that component).
+    """
+    count = len(system.records)
+    if not count:
+        return []
+    if targets is None:
+        targets = sorted({0, count // 2, count - 1})
+    wanted = set(targets)
+    size = system.A.shape[0]
+    running = sp.zeros(size, size)
+    snapshots: list[tuple[str, sp.Matrix]] = []
+    for index, record in enumerate(system.records):
+        for entry in record.entries:
+            if entry.target == "A":
+                running[entry.row, entry.col] += entry.term
+        if index in wanted:
+            snapshots.append((record.component, running.copy()))
+    return snapshots
 
 
 def assemble(circuit: Circuit) -> MNASystem:
