@@ -16,7 +16,36 @@ from sympy.matrices.exceptions import NonInvertibleMatrixError
 from .circuit import SOURCE_TYPES, Circuit
 from .errors import CircuitError, SingularMatrixError
 from .graph import GROUND, validate_topology
-from .mna import assemble
+from .initial import expand_initial_conditions
+from .mna import MNASystem, assemble
+
+
+def _lusolve(system: MNASystem) -> sp.Matrix:
+    try:
+        return system.A.LUsolve(system.z)
+    except (NonInvertibleMatrixError, ValueError) as exc:
+        raise SingularMatrixError(
+            "MNA matrix is singular despite topology checks; likely causes: "
+            "degenerate element values or a constraint loop not visible in the graph"
+        ) from exc
+
+
+def solve_node_voltages(circuit: Circuit, validate: bool = True) -> dict[str, sp.Expr]:
+    """Full s-domain node solve, with ICs expanded first (§4.4).
+
+    Returns {node: V(s)} including the ground node (0). This is the
+    complete response; use initial.zero_state_circuit / zero_input_circuit
+    to obtain the superposition parts separately.
+    """
+    if validate:
+        validate_topology(circuit)
+    expanded = expand_initial_conditions(circuit).circuit
+    system = assemble(expanded)
+    x = _lusolve(system)
+    voltages: dict[str, sp.Expr] = {GROUND: sp.Integer(0)}
+    for node, index in system.node_index.items():
+        voltages[node] = sp.cancel(x[index, 0])
+    return voltages
 
 
 @dataclass(frozen=True)
@@ -49,14 +78,7 @@ def transfer_function(circuit: Circuit) -> TransferFunction:
         for comp in circuit.components
     )
     system = assemble(Circuit(components=others_zeroed, output=circuit.output))
-
-    try:
-        x = system.A.LUsolve(system.z)
-    except (NonInvertibleMatrixError, ValueError) as exc:
-        raise SingularMatrixError(
-            "MNA matrix is singular despite topology checks; likely causes: "
-            "degenerate element values or a constraint loop not visible in the graph"
-        ) from exc
+    x = _lusolve(system)
 
     if circuit.output.node == GROUND:
         v_out = sp.Integer(0)
