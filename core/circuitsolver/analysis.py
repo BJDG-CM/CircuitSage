@@ -17,6 +17,7 @@ from .circuit import SOURCE_TYPES, Circuit
 from .errors import CircuitError, SingularMatrixError
 from .graph import GROUND, validate_topology
 from .initial import expand_initial_conditions
+from .laplace import TimeResponse, inverse_laplace
 from .mna import MNASystem, assemble, s
 
 
@@ -110,6 +111,19 @@ def pole_zero(tf: TransferFunction) -> PoleZeroResult:
         poles=_root_set(tf.denominator),
         zeros=_root_set(tf.numerator),
     )
+
+
+# --- Time responses (design §4.7) -------------------------------------------
+
+
+def impulse_response(tf: TransferFunction) -> TimeResponse:
+    """h(t) = L⁻¹{H(s)}, valid for t ≥ 0."""
+    return inverse_laplace(tf.expr)
+
+
+def step_response(tf: TransferFunction) -> TimeResponse:
+    """y(t) = L⁻¹{H(s)/s}, valid for t ≥ 0."""
+    return inverse_laplace(tf.expr / s)
 
 
 # --- Routh–Hurwitz stability (design §4.6) ---------------------------------

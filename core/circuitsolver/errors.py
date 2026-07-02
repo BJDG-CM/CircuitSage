@@ -43,6 +43,12 @@ class FloatingNodeError(TopologyError):
         self.nodes = list(nodes)
 
 
+class InverseLaplaceError(CircuitError):
+    """Both the table path and the SymPy fallback failed (§4.7)."""
+
+    code = "INVERSE_LAPLACE"
+
+
 class SingularMatrixError(CircuitError):
     """The assembled MNA matrix is not invertible."""
 
