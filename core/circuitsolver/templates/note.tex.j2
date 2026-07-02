@@ -1,0 +1,152 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb}
+\usepackage{kotex}
+\usepackage{booktabs}
+\usepackage[margin=25mm]{geometry}
+\title{\VAR{title}}
+\date{}
+\begin{document}
+\maketitle
+
+\section{문제 설정}
+회로는 다음 소자로 구성된다.
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+소자 & 종류 & 노드 $(n^+, n^-)$ & 값 \\
+\midrule
+\BLOCK{for row in components}
+\VAR{row.name} & \VAR{row.kind} & (\VAR{row.nodes}) & $\VAR{row.value}$\BLOCK{if row.ic} \; (초기조건 $\VAR{row.ic}$)\BLOCK{endif} \\
+\BLOCK{endfor}
+\bottomrule
+\end{tabular}
+\end{center}
+접지를 제외한 노드: \VAR{nodes}. 이 회로는 평면 그래프\BLOCK{if not planar}가 아니므로 mesh 해석을 적용할 수 없다\BLOCK{else}이므로 mesh 해석도 적용 가능하다\BLOCK{endif} (해석은 MNA로 수행).
+
+\BLOCK{if ic_rows}
+\section{s-영역 변환과 초기조건 등가}
+각 수동 소자는 $Z_R = R$, $Z_L = sL$, $Z_C = 1/(sC)$의 임피던스로 통일된다.
+초기조건은 병렬 전류원 등가로 치환한다 --- 인덕터는 $i_L(0^-)/s$ (원래 전류
+방향), 커패시터는 $C\,v_C(0^-)$ ($n^-\!\to n^+$ 방향 주입):
+\begin{itemize}
+\BLOCK{for row in ic_rows}
+\item \VAR{row.description}: 등가 전원 \VAR{row.source}, 값 $\VAR{row.value}$
+\BLOCK{endfor}
+\end{itemize}
+완전응답은 선형성에 따라 zero-state(입력만)와 zero-input(초기조건만)의 합으로
+분해된다.
+\BLOCK{endif}
+
+\section{MNA 행렬 유도}
+미지수 벡터는 노드 전압과 Group 2 가지 전류를 쌓은
+\begin{equation*}
+x = \VAR{unknowns}
+\end{equation*}
+이고, 시스템은 $A(s)\,x = z(s)$다. 소자를 하나씩 순회하며 스탬프를 더한다:
+\begin{itemize}
+\BLOCK{for record in stamps}
+\item \VAR{record.name}: \BLOCK{if record.entries}$\VAR{record.entries}$\BLOCK{else}(접지 기준행으로 소거됨)\BLOCK{endif}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{for cp in checkpoints}
+\VAR{cp.label}
+\begin{equation*}
+A = \VAR{cp.matrix}
+\end{equation*}
+\BLOCK{endfor}
+우변 벡터는
+\begin{equation*}
+z = \VAR{z_vector}.
+\end{equation*}
+
+\section{전달함수}
+$A x = z$를 풀어 출력 성분을 입력으로 나누면
+\begin{equation*}
+H(s) \;=\; \frac{V_{\mathrm{\VAR{output_node}}}(s)}{\VAR{input_source}(s)} \;=\; \VAR{h_latex}.
+\end{equation*}
+분모 $\VAR{den_latex}$가 이 회로의 특성다항식이다.
+
+\section{극점 \(\cdot\) 영점과 안정성}
+\BLOCK{if pole_rows}
+극점:
+\begin{itemize}
+\BLOCK{for row in pole_rows}
+\item $p = \VAR{row.value}$\BLOCK{if row.mult > 1} (중복도 \VAR{row.mult})\BLOCK{endif}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{else}
+분모가 상수이므로 극점이 없다 (동특성 없음).
+\BLOCK{endif}
+\BLOCK{if not poles_complete}
+기호 계수로 인해 닫힌형 근을 얻지 못했다 --- 수치 값을 대입하면 계산 가능하다.
+\BLOCK{endif}
+\BLOCK{if zero_rows}
+영점: \BLOCK{for row in zero_rows}$\VAR{row.value}$\BLOCK{if row.mult > 1} (중복도 \VAR{row.mult})\BLOCK{endif}\BLOCK{if not loop.last}, \BLOCK{endif}\BLOCK{endfor}
+\BLOCK{endif}
+
+\BLOCK{if routh_latex}
+Routh--Hurwitz 표:
+\begin{equation*}
+\VAR{routh_latex}
+\end{equation*}
+\BLOCK{endif}
+판정: \textbf{\VAR{stability_text}} (\VAR{stability_method}).
+\BLOCK{if stability_conditions}
+안정 조건 (첫 열 양수):
+\begin{itemize}
+\BLOCK{for cond in stability_conditions}
+\item $\VAR{cond}$
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{endif}
+\BLOCK{for note in stability_notes}
+\par\noindent\emph{비고: \VAR{note}}
+\BLOCK{endfor}
+
+\BLOCK{if impulse_latex or step_latex}
+\section{시간응답}
+\BLOCK{if impulse_pf}
+부분분수 분해:
+\begin{equation*}
+H(s) = \VAR{impulse_pf}
+\end{equation*}
+\BLOCK{endif}
+\BLOCK{if impulse_latex}
+임펄스 응답 ($t \ge 0$):
+\begin{equation*}
+h(t) = \VAR{impulse_latex}
+\end{equation*}
+\BLOCK{endif}
+\BLOCK{if step_latex}
+스텝 응답 ($t \ge 0$):
+\begin{equation*}
+y(t) = \VAR{step_latex}
+\end{equation*}
+\BLOCK{endif}
+\BLOCK{endif}
+\BLOCK{if response_note}
+\par\noindent\emph{비고: \VAR{response_note}}
+\BLOCK{endif}
+
+\BLOCK{if corners}
+\section{Bode 요약}
+Corner 주파수 (rad/s): \BLOCK{for c in corners}$\VAR{c}$\BLOCK{if not loop.last}, \BLOCK{endif}\BLOCK{endfor}.
+크기 근사는 각 corner에서 $\pm 20m$\,dB/decade씩 꺾인다.
+\BLOCK{endif}
+
+\BLOCK{if verifications}
+\section{SPICE 교차 검증}
+\begin{center}
+\begin{tabular}{lllll}
+\toprule
+해석 & 판정 & 최대 상대오차 & 위치 & 표본 수 \\
+\midrule
+\BLOCK{for v in verifications}
+\VAR{v.kind} & \BLOCK{if v.passed}통과\BLOCK{else}\textbf{실패}\BLOCK{endif} & $\VAR{v.err}$ & $\VAR{v.at}$ & \VAR{v.points} \\
+\BLOCK{endfor}
+\bottomrule
+\end{tabular}
+\end{center}
+\BLOCK{endif}
+
+\end{document}

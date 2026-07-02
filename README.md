@@ -28,7 +28,7 @@ python -m venv .venv
 
 - [x] **M1 엔진 코어** — 파서 ✅ · 그래프/평면성 ✅ · MNA 스탬프 ✅ · H(s) ✅
 - [x] **M2 동역학** — IC 등가 ✅ · pole/zero ✅ · Routh ✅ · 자체 역라플라스 ✅
-- [ ] M3 출력물 — Bode 데이터, LaTeX 노트, ngspice 검증
+- [x] **M3 출력물** — Bode 데이터 ✅ · LaTeX 노트(.tex) ✅ · ngspice 검증 ✅(CI에서 실행)
 - [ ] M4 웹 — FastAPI + React UI
 - [ ] M5 마감 — 단순화 스텝, Docker 배포
 - [ ] M6 선택 — 회로 그리기 에디터, 공유 링크
