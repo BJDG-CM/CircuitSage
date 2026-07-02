@@ -1,99 +1,324 @@
-# CircuitSage — Symbolic Circuit Solver
+<div align="center">
+
+# CircuitSage
+
+### Symbolic circuit analysis, from netlist to derivation
+
+CircuitSage analyzes linear RLC circuits with **symbolic Modified Nodal Analysis (MNA)** and presents the full result as equations, plots, derivation steps, and an optional LaTeX report.
 
 [![CI](https://github.com/BJDG-CM/CircuitSage/actions/workflows/ci.yml/badge.svg)](https://github.com/BJDG-CM/CircuitSage/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-TypeScript-61DAFB?logo=react&logoColor=111)
+![SymPy](https://img.shields.io/badge/SymPy-Symbolic%20Math-3B5526)
+![ngspice](https://img.shields.io/badge/ngspice-Verification-6B7280)
 
-선형 회로 netlist를 입력받아 Modified Nodal Analysis(MNA)를 **기호(symbolic)** 로 수행하고,
-전달함수 H(s) · pole/zero · Routh–Hurwitz 안정성 · impulse/step 응답 닫힌형 · Bode plot을
-계산해 교수 노트 형식의 LaTeX 문서로 출력하는 웹 애플리케이션입니다.
-모든 결과는 **ngspice 수치 시뮬레이션과 자동 교차 검증**됩니다.
+</div>
 
-설계 전문: [Symbolic-Circuit-Solver-설계문서.md](Symbolic-Circuit-Solver-설계문서.md)
+## Overview
 
-## 핵심 스토리 — 3중 검증
+Most circuit simulators focus on numerical waveforms. CircuitSage keeps the circuit symbolic for as long as possible, so it can show not only the answer, but also how the answer was constructed.
 
-핵심 수학을 라이브러리 호출로 때우지 않고 직접 구현했습니다(ADR-1, lcapy는 테스트
-오라클로만 사용). 정확성은 세 겹으로 방어합니다:
+Given a SPICE-like netlist, CircuitSage can:
 
-> 손으로 유도한 이론값 == 자체 엔진의 symbolic 결과 == ngspice 수치 결과 (오차 < 0.1%)
+- assemble the symbolic MNA system \(A(s)x=z(s)\)
+- derive the transfer function \(H(s)=V_o(s)/V_i(s)\)
+- calculate poles, zeros, and stability
+- obtain impulse and step responses in closed form
+- generate exact and asymptotic Bode data
+- handle capacitor and inductor initial conditions
+- record element stamps and circuit-reduction steps
+- export a lecture-note-style LaTeX report
+- optionally cross-check results against ngspice
 
-직접 구현한 것들:
+The project is designed as both an **educational circuit-analysis tool** and a **verifiable symbolic computation system**.
 
-- **MNA 스탬프 조립** — 소자별 (행, 열, 항) 델타 기록으로 유도 과정 전체를 재생 (ADR-7)
-- **초기조건 등가 전원** — IC를 병렬 전류원으로 치환, zero-state/zero-input 분해
-- **Routh–Hurwitz 표** — 0 피벗(ε 치환)·전행 0(보조 다항식) 특수 케이스 포함,
-  기호 계수는 "μ < 1 + R₂/R₁이면 안정" 식의 **조건부 판정** 출력
-- **부분분수 역라플라스** — 변환표 기반(중복 극점·감쇠 정현파), SymPy는 fallback
-- **단계별 회로 단순화** — 직렬/병렬/Norton 변환을 기록하고 H(s) 보존을 자체 검증
+## Highlights
 
-## 빠른 시작
+| Area | Capability |
+|---|---|
+| Symbolic engine | Exact arithmetic with SymPy, symbolic component values, MNA stamp assembly |
+| Dynamics | Initial-condition equivalents, zero-state/zero-input decomposition, inverse Laplace transform |
+| Stability | Pole-zero extraction and Routh–Hurwitz analysis, including zero-pivot and zero-row cases |
+| Topology | Ground and floating-node checks, source-loop/cut-set detection, planarity analysis |
+| Visualization | Interactive time-response and Bode plots with asymptotic magnitude curves |
+| Explanation | Per-component stamp deltas, MNA checkpoints, series/parallel/source transformations |
+| Verification | AC and transient comparison against ngspice with numerical error reports |
+| Interface | Netlist editor, SVG schematic editor, example library, shareable circuit links |
 
-### Docker (ngspice 포함, 권장)
+## Example
 
-```bash
-docker build -f docker/Dockerfile -t circuitsage .
-docker run -p 8000:8000 -v circuitsage-data:/data circuitsage
-# → http://localhost:8000
-```
-
-### 로컬 개발
-
-```powershell
-# 백엔드 (테스트 158개)
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -e "core[dev]" -e "api[dev]"
-.\.venv\Scripts\python -m pytest core/tests api/tests
-.\.venv\Scripts\python -m uvicorn circuitsage_api.main:app --port 8000
-
-# 프런트엔드 (별도 터미널)
-cd web && npm install && npm run dev   # → http://localhost:5173
-```
-
-ngspice 검증을 로컬에서 돌리려면 [ngspice](https://ngspice.sourceforge.io)를 PATH에
-설치하세요(없으면 해당 테스트는 자동 skip, CI에서는 항상 실행).
-
-## Netlist 문법 (SPICE 서브셋 + 확장)
-
-```
-* RLC 직렬 회로 — 값 자리에 식별자를 쓰면 기호로 처리
-Vin  in   0    Vi          ; 기호 입력원
-R1   in   n1   R
-L1   n1   out  2m  IC=0.1  ; 초기 전류 0.1 A
-C1   out  0    C   IC=5    ; 초기 전압 5 V
-.out V(out) Vin            ; H(s) = V(out)/Vin
+```spice
+* Symbolic RC low-pass filter
+Vin  in   0    Vi
+R1   in   out  R
+C1   out 0    C
+.out V(out) Vin
 .end
 ```
 
-지원 소자: R, L, C, 독립 V/I 전원. SPICE 접미사(`k m u n p Meg`) 지원.
-`.out`은 SPICE 예약어와 충돌하지 않는 자체 지시어입니다(ADR-6).
+CircuitSage derives:
 
-## 구조
+\[
+H(s)=\frac{1}{1+sRC},
+\qquad
+p=-\frac{1}{RC}
+\]
 
+\[
+h(t)=\frac{1}{RC}e^{-t/(RC)},
+\qquad
+y_{\mathrm{step}}(t)=1-e^{-t/(RC)},\quad t\ge0
+\]
+
+Numeric substitutions such as `R=1000, C=1e-6` can then be applied to produce plots and ngspice verification results without changing the symbolic netlist.
+
+## Quick Start
+
+### Docker
+
+The Docker image contains the frontend, API, symbolic engine, and ngspice.
+
+```bash
+docker build -f docker/Dockerfile -t circuitsage .
+docker run --rm -p 8000:8000 -v circuitsage-data:/data circuitsage
 ```
-core/       # 순수 Python 패키지 circuitsolver — 웹 의존성 0
-api/        # FastAPI: /api/solve, /api/examples, /api/share
-web/        # Vite + React + TS: netlist/회로도 에디터, KaTeX·Plotly 결과 뷰
-examples/   # golden 예제 netlist
-docker/     # 단일 배포 이미지 (ngspice 포함)
+
+Open **http://localhost:8000**.
+
+### Local Development
+
+Requirements:
+
+- Python 3.10+
+- Node.js 22+
+- ngspice in `PATH` for optional numerical verification
+
+```bash
+# Python environment
+python -m venv .venv
+source .venv/bin/activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+
+python -m pip install -e "core[dev]" -e "api[dev]"
+python -m uvicorn circuitsage_api.main:app --reload --port 8000
 ```
 
-의존성 방향은 `web → api → core` 단방향입니다. 코어는 CLI·노트북·pytest에서
-독립적으로 실행됩니다.
+In another terminal:
 
-## 로드맵 현황 (설계 §9)
+```bash
+cd web
+npm ci
+npm run dev
+```
 
-- [x] **M1 엔진 코어** — 파서 · 그래프/평면성 · MNA 스탬프 · H(s)
-- [x] **M2 동역학** — IC 등가 · pole/zero · Routh(조건부 판정) · 자체 역라플라스
-- [x] **M3 출력물** — Bode 데이터 · LaTeX 교수 노트(.tex) · ngspice 교차 검증
-- [x] **M4 웹** — FastAPI + React UI (7개 결과 탭)
-- [x] **M5 마감** — 단순화 스텝 · Docker 이미지 · README
-- [x] **M6 선택** — SVG 회로 그리기 에디터 → netlist 컴파일 · 공유 링크(SQLite)
-- [ ] 공개 URL 배포 — Docker 이미지 준비 완료, 호스팅(Fly.io/Railway 등)만 남음
+Open **http://localhost:5173**.
 
-## 테스트
+## Netlist Syntax
 
-| 계층 | 내용 |
+CircuitSage implements a focused SPICE subset with symbolic-analysis extensions.
+
+```spice
+* RLC circuit with initial conditions
+Vin  in   0    Vi
+R1   in   n1   R
+L1   n1   out  2m  IC=0.1
+C1   out  0    C   IC=5
+.out V(out) Vin
+.end
+```
+
+| Syntax | Description |
 |---|---|
-| core (146) | golden 회로 이론값 대조, Routh 특수 케이스, property-based 사다리망(hypothesis), ngspice 검증 4건(CI) |
-| api (16) | 전체 파이프라인, 오류 코드 매핑(라인 번호 포함), 공유 링크 |
-| web (6) | 회로도→netlist 컴파일러 (vitest), 타입체크 + 프로덕션 빌드 |
-| docker | 컨테이너 내부에서 ngspice 검증 포함 solve 스모크 테스트 |
+| `Rname n+ n- value` | Resistor |
+| `Lname n+ n- value [IC=i0]` | Inductor with optional initial current |
+| `Cname n+ n- value [IC=v0]` | Capacitor with optional initial voltage |
+| `Vname n+ n- value` | Independent voltage source |
+| `Iname n+ n- value` | Independent current source |
+| `.out V(node) source` | Defines \(H(s)=V(node)/source\) |
+| `k m u n p Meg` | Supported SPICE scale suffixes |
+
+A numeric value is stored exactly whenever possible. An identifier such as `R`, `C`, or `Vi` is interpreted as a symbolic parameter.
+
+## Analysis Pipeline
+
+```mermaid
+flowchart LR
+    A[Netlist or schematic] --> B[Parser]
+    B --> C[Topology validation]
+    C --> D[Symbolic MNA assembly]
+    D --> E[Transfer function]
+    E --> F[Poles, zeros, stability]
+    E --> G[Impulse and step response]
+    E --> H[Bode data]
+    D --> I[Derivation and simplification steps]
+    F --> J[Web result views]
+    G --> J
+    H --> J
+    I --> J
+    J --> K[LaTeX report]
+    E --> L[ngspice verification]
+```
+
+The dependency direction is intentionally one-way:
+
+```text
+web  →  api  →  core
+```
+
+The `core` package has no web-framework dependency and can be used independently in tests, scripts, or notebooks.
+
+## Web Interface
+
+The application provides two input modes:
+
+- **Netlist editor** — direct SPICE-like text input with example circuits
+- **Schematic editor** — SVG-based component placement compiled into the same netlist pipeline
+
+Analysis results are organized into seven views:
+
+1. Summary
+2. MNA derivation
+3. Time response
+4. Bode plot
+5. Circuit simplification
+6. LaTeX report
+7. ngspice verification
+
+Circuits can also be stored as shareable links through the SQLite-backed share API.
+
+## API
+
+### Solve a circuit
+
+```http
+POST /api/solve
+Content-Type: application/json
+```
+
+```json
+{
+  "netlist": "Vin in 0 Vi\nR1 in out R\nC1 out 0 C\n.out V(out) Vin\n",
+  "options": {
+    "numeric_values": {
+      "R": 1000,
+      "C": 0.000001,
+      "Vi": 1
+    },
+    "responses": ["impulse", "step"],
+    "verify": true,
+    "latex": true
+  }
+}
+```
+
+The response can include:
+
+- topology and planarity information
+- MNA matrices, unknowns, stamps, and checkpoints
+- transfer function, poles, zeros, and stability
+- impulse and step responses with sampled data
+- Bode magnitude, phase, corner frequencies, and asymptotes
+- circuit-simplification steps
+- ngspice error reports
+- generated LaTeX source
+
+Additional endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/examples` | List bundled example circuits |
+| `POST` | `/api/share` | Create a shareable circuit record |
+| `GET` | `/api/share/{id}` | Restore a shared circuit |
+
+## Verification and Testing
+
+CircuitSage uses three complementary validation layers:
+
+```text
+hand-derived theory
+        ==
+symbolic engine result
+        ≈
+ngspice numerical result
+```
+
+The test suite covers:
+
+- hand-derived golden circuits
+- MNA stamps and source conventions
+- initial-condition equivalents and superposition
+- Routh–Hurwitz special cases
+- repeated and complex poles in inverse Laplace transforms
+- Bode landmarks and asymptotic slopes
+- topology errors and non-planar networks
+- property-based resistor-ladder generation with Hypothesis
+- AC and transient ngspice comparison
+- API error mapping and share links
+- schematic-to-netlist compilation
+- production frontend and Docker builds in CI
+
+Run the checks locally:
+
+```bash
+python -m pytest core/tests api/tests
+
+cd web
+npm run lint
+npm test
+npm run build
+```
+
+## Project Structure
+
+```text
+CircuitSage/
+├── core/                  # Symbolic analysis package
+│   ├── circuitsolver/
+│   │   ├── parser.py      # Netlist parser
+│   │   ├── graph.py       # Topology and planarity checks
+│   │   ├── mna.py         # Symbolic MNA stamps and assembly
+│   │   ├── initial.py     # Initial-condition transformations
+│   │   ├── analysis.py    # H(s), poles, zeros, and stability
+│   │   ├── laplace.py     # Table-driven inverse Laplace transform
+│   │   ├── bode.py        # Frequency-response data
+│   │   ├── simplify.py    # Step-by-step circuit reduction
+│   │   ├── report.py      # LaTeX report generation
+│   │   └── verify.py      # ngspice cross-verification
+│   └── tests/
+├── api/                   # FastAPI application
+├── web/                   # React + TypeScript frontend
+├── examples/              # Bundled circuit netlists
+├── docker/                # Production container
+└── .github/workflows/     # CI pipeline
+```
+
+## Current Scope
+
+CircuitSage currently targets small and medium-sized **linear, lumped, time-invariant circuits** composed of:
+
+- resistors
+- inductors
+- capacitors
+- independent voltage sources
+- independent current sources
+
+The default API limit is 15 components and can be configured with `CIRCUITSAGE_MAX_COMPONENTS`.
+
+CircuitSage is intended for symbolic analysis, education, and verification. It is not a replacement for a full industrial SPICE simulator or a nonlinear device simulator.
+
+## Configuration
+
+| Environment variable | Default | Description |
+|---|---:|---|
+| `CIRCUITSAGE_MAX_COMPONENTS` | `15` | Maximum components accepted by the solve API |
+| `CIRCUITSAGE_EXAMPLES_DIR` | `./examples` | Directory containing bundled `.cir` files |
+| `CIRCUITSAGE_DB` | `./circuitsage.db` | SQLite path for shared circuits |
+| `CIRCUITSAGE_STATIC_DIR` | unset | Built frontend directory served by FastAPI |
+
+## Design Documentation
+
+The detailed architecture, mathematical decisions, milestones, and design records are documented in:
+
+**[Symbolic Circuit Solver — Design Document](Symbolic-Circuit-Solver-설계문서.md)**
+
