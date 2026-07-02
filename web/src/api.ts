@@ -152,3 +152,28 @@ export async function fetchExamples(): Promise<Example[]> {
   if (!response.ok) throw new Error(`예제 목록 로드 실패 (${response.status})`)
   return response.json()
 }
+
+export interface SharedCircuit {
+  netlist: string
+  options: { numeric_values?: Record<string, number> }
+}
+
+export async function createShare(
+  netlist: string,
+  options: SharedCircuit['options'],
+): Promise<string> {
+  const response = await fetch('/api/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ netlist, options }),
+  })
+  if (!response.ok) throw new Error(`공유 링크 생성 실패 (${response.status})`)
+  const body = await response.json()
+  return body.id as string
+}
+
+export async function fetchShare(id: string): Promise<SharedCircuit> {
+  const response = await fetch(`/api/share/${id}`)
+  if (!response.ok) throw new Error(`공유 링크 로드 실패 (${response.status})`)
+  return response.json()
+}

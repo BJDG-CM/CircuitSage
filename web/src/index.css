@@ -89,6 +89,25 @@ body {
   cursor: wait;
 }
 
+.ghost-button {
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.share-box {
+  padding: 8px 10px;
+  background: #eef2ff;
+  border: 1px solid #c7d0f0;
+  border-radius: 8px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .error-box {
   padding: 10px 12px;
   background: var(--error-bg);

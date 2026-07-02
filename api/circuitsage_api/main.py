@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .errors import register_exception_handlers
-from .routes import examples, solve
+from .routes import examples, share, solve
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(solve.router, prefix="/api")
     app.include_router(examples.router, prefix="/api")
+    app.include_router(share.router, prefix="/api")
     return app
 
 

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
-import { fetchExamples, solve, SolveError } from './api'
+import { createShare, fetchExamples, fetchShare, solve, SolveError } from './api'
 import type { SolveResult } from './api'
 import {
   BodeTab,
@@ -55,8 +55,41 @@ export default function App() {
   const [wantLatex, setWantLatex] = useState(false)
   const [tab, setTab] = useState<TabId>('summary')
   const [inputError, setInputError] = useState<string | null>(null)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
 
   const examples = useQuery({ queryKey: ['examples'], queryFn: fetchExamples })
+
+  // ?share=<id> 로 열면 저장된 회로를 불러온다
+  useEffect(() => {
+    const shareId = new URLSearchParams(window.location.search).get('share')
+    if (!shareId) return
+    fetchShare(shareId)
+      .then((shared) => {
+        setNetlist(shared.netlist)
+        const values = shared.options?.numeric_values
+        if (values) {
+          setValuesText(
+            Object.entries(values)
+              .map(([key, value]) => `${key}=${value}`)
+              .join(', '),
+          )
+        }
+      })
+      .catch(() => setInputError('공유 링크를 불러오지 못했습니다.'))
+  }, [])
+
+  const makeShareLink = async () => {
+    setInputError(null)
+    try {
+      const numericValues = parseNumericValues(valuesText)
+      const id = await createShare(netlist, { numeric_values: numericValues })
+      const url = `${window.location.origin}${window.location.pathname}?share=${id}`
+      setShareUrl(url)
+      await navigator.clipboard.writeText(url).catch(() => {})
+    } catch (error) {
+      setInputError((error as Error).message)
+    }
+  }
 
   const mutation = useMutation<SolveResult, Error, void>({
     mutationFn: () => {
@@ -147,6 +180,16 @@ export default function App() {
         <button className="solve-button" onClick={runSolve} disabled={mutation.isPending}>
           {mutation.isPending ? '해석 중…' : '해석 실행'}
         </button>
+        <button className="ghost-button" onClick={makeShareLink}>
+          공유 링크 만들기
+        </button>
+        {shareUrl && (
+          <div className="share-box">
+            링크가 클립보드에 복사되었습니다:
+            <br />
+            <a href={shareUrl}>{shareUrl}</a>
+          </div>
+        )}
 
         {inputError && <div className="error-box">{inputError}</div>}
         {solveError && (

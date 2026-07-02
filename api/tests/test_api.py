@@ -111,6 +111,29 @@ class TestErrorMapping:
         assert ".out" in response.json()["error"]["message"]
 
 
+class TestShareLinks:
+    @pytest.fixture(autouse=True)
+    def _isolated_db(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CIRCUITSAGE_DB", str(tmp_path / "shares.db"))
+
+    def test_share_roundtrip(self, client):
+        created = client.post(
+            "/api/share",
+            json={"netlist": RC_NUMERIC, "options": {"numeric_values": {"R": 1}}},
+        )
+        assert created.status_code == 200
+        share_id = created.json()["id"]
+
+        fetched = client.get(f"/api/share/{share_id}")
+        assert fetched.status_code == 200
+        body = fetched.json()
+        assert body["netlist"] == RC_NUMERIC
+        assert body["options"]["numeric_values"] == {"R": 1}
+
+    def test_unknown_share_is_404(self, client):
+        assert client.get("/api/share/nope").status_code == 404
+
+
 class TestExamples:
     def test_examples_listed_with_netlists(self, client):
         response = client.get("/api/examples")
