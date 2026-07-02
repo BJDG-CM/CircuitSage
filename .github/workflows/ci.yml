@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ngspice (verification oracle)
+        run: sudo apt-get update && sudo apt-get install -y ngspice
+
+      - name: Install core package
+        run: python -m pip install -e "core[dev]"
+
+      - name: Run core tests (ngspice tests included)
+        run: python -m pytest core/tests -q
