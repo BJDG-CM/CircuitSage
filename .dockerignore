@@ -1,0 +1,10 @@
+.venv/
+.git/
+.github/
+web/node_modules/
+web/dist/
+**/__pycache__/
+**/*.egg-info/
+**/.pytest_cache/
+**/.hypothesis/
+*.db

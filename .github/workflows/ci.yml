@@ -44,3 +44,25 @@ jobs:
           npm ci
           npm run build
           npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t circuitsage .
+
+      - name: Smoke test container (ngspice verification inside)
+        run: |
+          docker run -d --rm -p 8000:8000 --name sage circuitsage
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/api/examples > /dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:8000/ > /dev/null
+          curl -sf -X POST http://localhost:8000/api/solve \
+            -H "Content-Type: application/json" \
+            -d '{"netlist":"Vin in 0 Vi\nR1 in out 1k\nC1 out 0 1u\n.out V(out) Vin\n","options":{"verify":true,"numeric_values":{"Vi":1}}}' \
+            | grep -q '"passed":true'
+          docker stop sage
