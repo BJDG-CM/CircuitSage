@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { createShare, fetchExamples, fetchShare, solve, SolveError } from './api'
 import type { SolveResult } from './api'
+import { SchematicEditor } from './schematic/SchematicEditor'
 import {
   BodeTab,
   LatexTab,
@@ -56,6 +57,7 @@ export default function App() {
   const [tab, setTab] = useState<TabId>('summary')
   const [inputError, setInputError] = useState<string | null>(null)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [editorMode, setEditorMode] = useState<'text' | 'schematic'>('text')
 
   const examples = useQuery({ queryKey: ['examples'], queryFn: fetchExamples })
 
@@ -144,12 +146,37 @@ export default function App() {
           </select>
         </label>
 
-        <CodeMirror
-          value={netlist}
-          height="260px"
-          basicSetup={{ lineNumbers: true, foldGutter: false }}
-          onChange={(value) => setNetlist(value)}
-        />
+        <div className="mode-toggle">
+          <button
+            className={editorMode === 'text' ? 'active' : ''}
+            onClick={() => setEditorMode('text')}
+          >
+            텍스트
+          </button>
+          <button
+            className={editorMode === 'schematic' ? 'active' : ''}
+            onClick={() => setEditorMode('schematic')}
+          >
+            회로도
+          </button>
+        </div>
+
+        <div style={{ display: editorMode === 'text' ? 'block' : 'none' }}>
+          <CodeMirror
+            value={netlist}
+            height="260px"
+            basicSetup={{ lineNumbers: true, foldGutter: false }}
+            onChange={(value) => setNetlist(value)}
+          />
+        </div>
+        <div style={{ display: editorMode === 'schematic' ? 'block' : 'none' }}>
+          <SchematicEditor
+            onCompile={(compiled) => {
+              setNetlist(compiled)
+              setEditorMode('text')
+            }}
+          />
+        </div>
 
         <label className="field-label">
           수치 값 (Bode·검증용, 예: R=1000, C=1e-6)
