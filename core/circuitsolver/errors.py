@@ -25,6 +25,12 @@ class ParseError(CircuitError):
         self.line = line
 
 
+class VerificationError(CircuitError):
+    """ngspice could not be run or produced unusable output (§4.11)."""
+
+    code = "VERIFY_ERROR"
+
+
 class TopologyError(CircuitError):
     """Structural problem detected on the circuit graph."""
 

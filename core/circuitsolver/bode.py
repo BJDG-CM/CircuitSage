@@ -20,6 +20,7 @@ import sympy as sp
 from .analysis import TransferFunction, _root_set
 from .errors import CircuitError
 from .mna import s
+from .spice_io import substitute_numeric
 
 _ORIGIN_TOLERANCE = 1e-12
 
@@ -34,24 +35,7 @@ class BodeData:
 
 
 def _substituted(expr: sp.Expr, numeric_values: Mapping | None) -> sp.Expr:
-    substitutions = {}
-    for key, value in (numeric_values or {}).items():
-        symbol = sp.Symbol(key) if isinstance(key, str) else key
-        substitutions[symbol.name] = sp.nsimplify(value, rational=True)
-    if substitutions:
-        # match by name so assumption-carrying symbols (positive=True) hit too
-        expr = expr.subs(
-            {sym: substitutions[sym.name] for sym in expr.free_symbols
-             if sym.name in substitutions}
-        )
-    remaining = expr.free_symbols - {s}
-    if remaining:
-        names = ", ".join(sorted(str(sym) for sym in remaining))
-        raise CircuitError(
-            f"H(s) still contains symbols ({names}); "
-            "provide numeric_values to evaluate the frequency response"
-        )
-    return expr
+    return substitute_numeric(expr, numeric_values, "H(s)", allow=(s,))
 
 
 def _signed_roots(expr: sp.Expr, sign: int) -> list[tuple[float, int, int]]:

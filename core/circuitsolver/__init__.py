@@ -18,6 +18,7 @@ from .analysis import (
     step_response,
     transfer_function,
 )
+from .bode import BodeData, bode_data
 from .circuit import Circuit, Component, ComponentType, OutputSpec
 from .errors import (
     CircuitError,
@@ -28,6 +29,7 @@ from .errors import (
     ParseError,
     SingularMatrixError,
     TopologyError,
+    VerificationError,
     VoltageSourceLoopError,
 )
 from .graph import TopologyReport, build_multigraph, validate_topology
@@ -40,10 +42,13 @@ from .initial import (
 from .laplace import TimeResponse, inverse_laplace, t
 from .mna import MNASystem, StampEntry, StampRecord, assemble, s
 from .parser import parse
+from .spice_io import element_lines, full_netlist, numeric_circuit, substitute_numeric
+from .verify import VerificationReport, find_ngspice, verify_ac, verify_tran
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "BodeData",
     "Circuit",
     "CircuitError",
     "Component",
@@ -66,12 +71,19 @@ __all__ = [
     "TopologyError",
     "TopologyReport",
     "TransferFunction",
+    "VerificationError",
+    "VerificationReport",
     "VoltageSourceLoopError",
     "assemble",
+    "bode_data",
     "build_multigraph",
+    "element_lines",
     "expand_initial_conditions",
+    "find_ngspice",
+    "full_netlist",
     "impulse_response",
     "inverse_laplace",
+    "numeric_circuit",
     "parse",
     "pole_zero",
     "routh_stability",
@@ -80,9 +92,12 @@ __all__ = [
     "solve_node_voltages",
     "stability",
     "step_response",
+    "substitute_numeric",
     "t",
     "transfer_function",
     "validate_topology",
+    "verify_ac",
+    "verify_tran",
     "zero_input_circuit",
     "zero_state_circuit",
 ]

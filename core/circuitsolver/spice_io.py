@@ -11,7 +11,8 @@ ngspice에는 그대로 넘길 수 없다. 이 모듈은 (1) 기호 값을 수�
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from dataclasses import replace
+from typing import Iterable, Mapping, Sequence
 
 import sympy as sp
 
@@ -19,8 +20,16 @@ from .circuit import Circuit
 from .errors import CircuitError
 
 
-def substitute_numeric(expr: sp.Expr, numeric_values: Mapping | None, context: str) -> sp.Expr:
-    """Substitute by symbol *name* (assumption-carrying symbols still match)."""
+def substitute_numeric(
+    expr: sp.Expr,
+    numeric_values: Mapping | None,
+    context: str,
+    allow: Iterable[sp.Symbol] = (),
+) -> sp.Expr:
+    """Substitute by symbol *name* (assumption-carrying symbols still match).
+
+    Symbols in ``allow`` (e.g. s) may remain; anything else raises.
+    """
     values = {
         (key if isinstance(key, str) else key.name): sp.nsimplify(value, rational=True)
         for key, value in (numeric_values or {}).items()
@@ -28,14 +37,28 @@ def substitute_numeric(expr: sp.Expr, numeric_values: Mapping | None, context: s
     expr = sp.sympify(expr).subs(
         {sym: values[sym.name] for sym in expr.free_symbols if sym.name in values}
     )
-    remaining = expr.free_symbols
+    remaining = expr.free_symbols - set(allow)
     if remaining:
         names = ", ".join(sorted(str(sym) for sym in remaining))
         raise CircuitError(
-            f"{context}: symbols remain ({names}); "
-            "provide numeric_values for SPICE verification"
+            f"{context}: symbols remain ({names}); provide numeric_values"
         )
     return expr
+
+
+def numeric_circuit(circuit: Circuit, numeric_values: Mapping | None) -> Circuit:
+    """The same circuit with every value/IC made numeric."""
+    components = tuple(
+        replace(
+            comp,
+            value=substitute_numeric(comp.value, numeric_values, comp.name),
+            ic=None
+            if comp.ic is None
+            else substitute_numeric(comp.ic, numeric_values, f"{comp.name} IC"),
+        )
+        for comp in circuit.components
+    )
+    return Circuit(components=components, output=circuit.output)
 
 
 def _format(value: sp.Expr) -> str:
