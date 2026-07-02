@@ -43,6 +43,12 @@ class FloatingNodeError(TopologyError):
         self.nodes = list(nodes)
 
 
+class SingularMatrixError(CircuitError):
+    """The assembled MNA matrix is not invertible."""
+
+    code = "SINGULAR_MATRIX"
+
+
 class VoltageSourceLoopError(TopologyError):
     """A loop made only of voltage sources makes the MNA matrix singular."""
 
