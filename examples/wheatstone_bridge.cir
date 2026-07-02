@@ -1,0 +1,9 @@
+* 휘트스톤 브리지 — 평면이지만 직병렬 단순화가 불가능한 대표 회로
+Vin  top 0  Vi
+R1   top a  100
+R2   top b  200
+R3   a   0  300
+R4   b   0  400
+R5   a   b  500
+.out V(a) Vin
+.end

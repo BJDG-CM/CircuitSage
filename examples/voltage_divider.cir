@@ -1,0 +1,6 @@
+* 저항 전압분배기 — H(s) = R2 / (R1 + R2)
+Vin  in  0    Vi
+R1   in  out  R1
+R2   out 0    R2
+.out V(out) Vin
+.end

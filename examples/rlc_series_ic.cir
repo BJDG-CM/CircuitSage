@@ -1,0 +1,7 @@
+* RLC 직렬 회로, 커패시터 전압이 출력 (설계 문서 §4.1 예제)
+Vin  in   0    Vi          ; 기호 입력원 (라플라스 영역에서 V_i(s))
+R1   in   n1   R           ; 기호 값
+L1   n1   out  2m  IC=0.1  ; 2 mH, i_L(0-) = 0.1 A
+C1   out  0    C   IC=5    ; 기호 값, v_C(0-) = 5 V
+.out V(out) Vin
+.end

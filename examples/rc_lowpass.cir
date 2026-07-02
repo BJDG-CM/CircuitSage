@@ -1,0 +1,6 @@
+* RC 1차 저역통과 — H(s) = 1 / (1 + sRC), pole = -1/RC
+Vin  in  0    Vi
+R1   in  out  R
+C1   out 0    C
+.out V(out) Vin
+.end
