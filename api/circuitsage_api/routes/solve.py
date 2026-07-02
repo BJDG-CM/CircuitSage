@@ -32,6 +32,7 @@ from circuitsolver.errors import CircuitError, InverseLaplaceError
 from circuitsolver.laplace import t
 from circuitsolver.mna import replay_checkpoints
 from circuitsolver.report import generate_report, routh_array_latex
+from circuitsolver.simplify import simplify_circuit
 from circuitsolver.verify import verify_ac, verify_tran
 
 from ..errors import TooManyComponentsError
@@ -187,6 +188,22 @@ def solve(request: SolveRequest) -> dict:
         }
     except CircuitError as exc:
         warnings.append(f"Bode 생략: {exc}")
+
+    simplification = simplify_circuit(circuit)
+    result["simplification"] = {
+        "steps": [
+            {
+                "rule": step.rule,
+                "description": step.description,
+                "latex": step.latex,
+                "removed": list(step.removed),
+                "created": list(step.created),
+            }
+            for step in simplification.steps
+        ],
+        "final_component_count": len(simplification.circuit.components),
+        "verified": simplification.verified,
+    }
 
     verification_reports = []
     if options.verify:

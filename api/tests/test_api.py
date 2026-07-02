@@ -61,6 +61,22 @@ class TestSolveHappyPath:
         body = _solve(client, RC_NUMERIC, latex=True).json()
         assert body["latex_report"].startswith("\\documentclass")
 
+    def test_simplification_steps_reported(self, client):
+        netlist = "Vin a 0 Vi\nR1 a 0 1k\nR2 a 0 1k\n.out V(a) Vin\n"
+        body = _solve(client, netlist).json()
+        simplification = body["simplification"]
+        assert len(simplification["steps"]) == 1
+        assert simplification["steps"][0]["rule"] == "parallel"
+        assert simplification["verified"] is True
+
+    def test_bridge_has_no_simplification_steps(self, client):
+        netlist = (
+            "Vin top 0 Vi\nR1 top a 100\nR2 top b 200\n"
+            "R3 a 0 300\nR4 b 0 400\nR5 a b 500\n.out V(a) Vin\n"
+        )
+        body = _solve(client, netlist).json()
+        assert body["simplification"]["steps"] == []
+
 
 class TestErrorMapping:
     def test_parse_error_carries_line_number(self, client):

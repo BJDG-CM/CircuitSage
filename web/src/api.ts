@@ -79,6 +79,20 @@ export interface TransferFunctionDto {
   input_source: string
 }
 
+export interface SimplificationStepDto {
+  rule: string
+  description: string
+  latex: string
+  removed: string[]
+  created: string[]
+}
+
+export interface SimplificationDto {
+  steps: SimplificationStepDto[]
+  final_component_count: number
+  verified: boolean | null
+}
+
 export interface SolveResult {
   nodes: string[]
   planarity: { planar: boolean }
@@ -89,6 +103,7 @@ export interface SolveResult {
   stability: StabilityDto
   responses?: Record<string, ResponseEntry>
   bode?: BodeDto
+  simplification?: SimplificationDto
   verification?: { passed: boolean; reports: VerificationReportDto[] }
   latex_report?: string
   warnings: string[]

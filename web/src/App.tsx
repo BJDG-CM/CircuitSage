@@ -3,7 +3,15 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { fetchExamples, solve, SolveError } from './api'
 import type { SolveResult } from './api'
-import { BodeTab, LatexTab, MnaTab, ResponseTab, SummaryTab, VerifyTab } from './tabs'
+import {
+  BodeTab,
+  LatexTab,
+  MnaTab,
+  ResponseTab,
+  SimplifyTab,
+  SummaryTab,
+  VerifyTab,
+} from './tabs'
 
 const DEFAULT_NETLIST = `* RC 1차 저역통과 — H(s) = 1/(1+sRC)
 Vin  in  0    Vi
@@ -18,6 +26,7 @@ const TABS = [
   { id: 'mna', label: 'MNA 유도' },
   { id: 'response', label: '시간응답' },
   { id: 'bode', label: 'Bode' },
+  { id: 'simplify', label: '단순화' },
   { id: 'latex', label: 'LaTeX 노트' },
   { id: 'verify', label: '검증' },
 ] as const
@@ -170,6 +179,7 @@ export default function App() {
           {mutation.data && tab === 'mna' && <MnaTab result={mutation.data} />}
           {mutation.data && tab === 'response' && <ResponseTab result={mutation.data} />}
           {mutation.data && tab === 'bode' && <BodeTab result={mutation.data} />}
+          {mutation.data && tab === 'simplify' && <SimplifyTab result={mutation.data} />}
           {mutation.data && tab === 'latex' && <LatexTab result={mutation.data} />}
           {mutation.data && tab === 'verify' && <VerifyTab result={mutation.data} />}
         </div>
