@@ -308,7 +308,23 @@ export function SimplifyTab({ result }: { result: SolveResult }) {
 export function VerifyTab({ result }: { result: SolveResult }) {
   const verification = result.verification
   if (!verification) {
-    return <p>검증 결과가 없습니다 — 좌측에서 "ngspice 검증"을 켜세요 (서버에 ngspice 필요).</p>
+    return <p>검증 결과가 없습니다 — 좌측에서 "ngspice 검증"을 켜세요 (선택 기능).</p>
+  }
+  if (verification.status === 'unavailable') {
+    return (
+      <p>
+        서버에 ngspice가 설치되어 있지 않아 교차 검증을 사용할 수 없습니다. 검증은
+        선택 기능이며, 심볼릭 해석 결과에는 영향이 없습니다.
+      </p>
+    )
+  }
+  if (verification.status === 'error') {
+    return (
+      <div>
+        <p>검증 실행에 실패했습니다:</p>
+        <pre className="tex-preview">{verification.detail}</pre>
+      </div>
+    )
   }
   return (
     <div>

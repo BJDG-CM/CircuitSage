@@ -62,6 +62,12 @@ class TestSolveHappyPath:
         body = _solve(client, RC_NUMERIC, latex=True).json()
         assert body["latex_report"].startswith("\\documentclass")
 
+    def test_missing_ngspice_reports_unavailable_status(self, client, monkeypatch):
+        monkeypatch.setattr("circuitsage_api.pipeline.find_ngspice", lambda: None)
+        body = _solve(client, RC_NUMERIC, verify=True).json()
+        assert body["verification"]["status"] == "unavailable"
+        assert any("ngspice" in warning for warning in body["warnings"])
+
     def test_cancelled_internal_mode_is_reported_separately(self, client):
         # H(s)=1로 완전 소거되지만 내부 RC 모드는 system_modes에 남아야 한다
         netlist = "Vin in 0 Vi\nR1 in n R\nC1 n 0 C\n.out V(in) Vin\n"

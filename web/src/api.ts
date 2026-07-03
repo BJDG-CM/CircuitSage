@@ -113,7 +113,12 @@ export interface SolveResult {
   responses?: Record<string, ResponseEntry>
   bode?: BodeDto
   simplification?: SimplificationDto
-  verification?: { passed: boolean; reports: VerificationReportDto[] }
+  verification?: {
+    status: 'ok' | 'unavailable' | 'error' | string
+    passed?: boolean
+    detail?: string
+    reports: VerificationReportDto[]
+  }
   latex_report?: string
   warnings: string[]
 }

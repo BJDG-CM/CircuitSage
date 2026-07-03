@@ -9,12 +9,23 @@ Two axes:
          value V becomes V/s on the symbolic side, matching ngspice's
          "DC value switched on at t=0 under uic" semantics.
 
-Pass criterion is a mixed tolerance: relative error (default 0.1%) with
-an absolute floor scaled to the largest reference sample.
+Tolerance (documented contract): for each sample,
+    err_i = |ref_i − meas_i| / max(|ref_i|, floor),
+    floor  = 1e-6 · max_i |ref_i| + 1e-15.
+Near-zero reference samples are therefore judged against the absolute
+floor instead of blowing up the relative error; the report passes when
+max err_i < rtol (default 0.1%).
+
+Execution safety: ngspice runs as an argument-list subprocess (never a
+shell command, so no injection), inside a TemporaryDirectory that is
+removed afterwards, with a timeout from
+CIRCUITSAGE_NGSPICE_TIMEOUT_SECONDS (default 60 s). Executable discovery
+covers both Linux ("ngspice") and Windows ("ngspice_con") names.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -54,37 +65,66 @@ def find_ngspice() -> str | None:
     return None
 
 
+def _ngspice_timeout() -> float:
+    return float(os.environ.get("CIRCUITSAGE_NGSPICE_TIMEOUT_SECONDS", "60"))
+
+
 def _run_deck(deck: str, output_files: list[str]) -> dict[str, np.ndarray]:
     executable = find_ngspice()
     if executable is None:
         raise VerificationError(
             "ngspice executable not found on PATH; install ngspice to verify"
         )
+    timeout = _ngspice_timeout()
     with tempfile.TemporaryDirectory(prefix="circuitsage_") as tmp:
         tmpdir = Path(tmp)
         deck_path = tmpdir / "deck.cir"
         deck_path.write_text(deck, encoding="utf-8")
-        result = subprocess.run(
-            [executable, "-b", deck_path.name],
-            cwd=tmpdir,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        try:
+            # argument list, no shell: the netlist can never become a command
+            result = subprocess.run(
+                [executable, "-b", deck_path.name],
+                cwd=tmpdir,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise VerificationError(
+                f"ngspice timed out after CIRCUITSAGE_NGSPICE_TIMEOUT_SECONDS="
+                f"{timeout:g}s"
+            ) from exc
+
+        tail = ((result.stdout or "") + (result.stderr or ""))[-2000:]
+        if result.returncode != 0:
+            raise VerificationError(
+                f"ngspice exited with status {result.returncode}; output tail:\n{tail}"
+            )
+
         data: dict[str, np.ndarray] = {}
         missing = []
         for name in output_files:
             path = tmpdir / name
-            if path.exists():
-                data[name] = np.atleast_2d(np.loadtxt(path))
-            else:
+            if not path.exists():
                 missing.append(name)
+                continue
+            try:
+                data[name] = np.atleast_2d(np.loadtxt(path))
+            except (ValueError, OSError) as exc:
+                raise VerificationError(
+                    f"malformed ngspice output in {name}: {exc}; "
+                    f"ngspice output tail:\n{tail}"
+                ) from exc
         if missing:
-            tail = (result.stdout + result.stderr)[-2000:]
             raise VerificationError(
-                f"ngspice did not produce {', '.join(missing)} "
-                f"(exit {result.returncode}); output tail:\n{tail}"
+                f"ngspice did not produce {', '.join(missing)}; output tail:\n{tail}"
             )
+        for name, array in data.items():
+            if array.size == 0 or array.shape[1] < 2 or not np.all(np.isfinite(array)):
+                raise VerificationError(
+                    f"unusable ngspice output in {name} (shape {array.shape}, "
+                    "expected >= 2 finite columns)"
+                )
     return data
 
 
