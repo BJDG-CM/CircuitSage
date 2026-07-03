@@ -59,6 +59,11 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [editorMode, setEditorMode] = useState<'text' | 'schematic'>('text')
   const [schematicMounted, setSchematicMounted] = useState(false)
+  // 회로도 모드의 실시간 컴파일 결과 — 그림 그대로 해석/공유에 사용된다
+  const [schematicNetlist, setSchematicNetlist] = useState<string | null>(null)
+  const [schematicErrors, setSchematicErrors] = useState<string[]>([])
+
+  const activeNetlist = editorMode === 'schematic' ? schematicNetlist : netlist
 
   const examples = useQuery({ queryKey: ['examples'], queryFn: fetchExamples })
 
@@ -83,9 +88,13 @@ export default function App() {
 
   const makeShareLink = async () => {
     setInputError(null)
+    if (activeNetlist == null) {
+      setInputError(schematicErrors[0] ?? '회로도가 아직 완성되지 않았습니다.')
+      return
+    }
     try {
       const numericValues = parseNumericValues(valuesText)
-      const id = await createShare(netlist, { numeric_values: numericValues })
+      const id = await createShare(activeNetlist, { numeric_values: numericValues })
       const url = `${window.location.origin}${window.location.pathname}?share=${id}`
       setShareUrl(url)
       await navigator.clipboard.writeText(url).catch(() => {})
@@ -94,10 +103,10 @@ export default function App() {
     }
   }
 
-  const mutation = useMutation<SolveResult, Error, void>({
-    mutationFn: () => {
+  const mutation = useMutation<SolveResult, Error, string>({
+    mutationFn: (netlistToSolve: string) => {
       const numericValues = parseNumericValues(valuesText)
-      return solve(netlist, {
+      return solve(netlistToSolve, {
         numeric_values: numericValues,
         responses: ['impulse', 'step'],
         verify: wantVerify,
@@ -108,13 +117,17 @@ export default function App() {
 
   const runSolve = () => {
     setInputError(null)
+    if (activeNetlist == null) {
+      setInputError(schematicErrors[0] ?? '회로도가 아직 완성되지 않았습니다.')
+      return
+    }
     try {
       parseNumericValues(valuesText)
     } catch (error) {
       setInputError((error as Error).message)
       return
     }
-    mutation.mutate()
+    mutation.mutate(activeNetlist)
   }
 
   const solveError = mutation.error instanceof SolveError ? mutation.error : null
@@ -122,7 +135,7 @@ export default function App() {
     mutation.error && !(mutation.error instanceof SolveError) ? mutation.error : null
 
   return (
-    <div className="layout">
+    <div className={editorMode === 'schematic' ? 'layout schematic-mode' : 'layout'}>
       <aside className="editor-pane">
         <h1>CircuitSage</h1>
         <p className="muted">Symbolic MNA 회로 해석기 — netlist를 입력하고 해석하세요.</p>
@@ -180,6 +193,10 @@ export default function App() {
                 onCompile={(compiled) => {
                   setNetlist(compiled)
                   setEditorMode('text')
+                }}
+                onLiveNetlist={(compiled, errors) => {
+                  setSchematicNetlist(compiled)
+                  setSchematicErrors(errors)
                 }}
               />
             </Suspense>

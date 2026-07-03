@@ -24,6 +24,10 @@ body {
   min-height: 100vh;
 }
 
+.layout.schematic-mode {
+  grid-template-columns: minmax(420px, 46%) 1fr;
+}
+
 .editor-pane {
   padding: 20px;
   background: var(--panel);
@@ -265,4 +269,35 @@ td {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+.schematic-preview {
+  border: 1px solid #cfdcc9;
+  background: #f4faf1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.schematic-preview .preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: #3e6b34;
+}
+
+.schematic-preview pre {
+  margin: 6px 0 0;
+  max-height: 130px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.schematic-canvas {
+  touch-action: none;
+  user-select: none;
 }

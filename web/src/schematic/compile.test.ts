@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compileSchematic } from './compile'
+import { compileSchematic, junctionPoints } from './compile'
 import type { Part, Schematic } from './compile'
 
 function part(overrides: Partial<Part> & Pick<Part, 'id' | 'kind' | 'name' | 'value' | 'x' | 'y'>): Part {
@@ -69,5 +69,52 @@ describe('compileSchematic', () => {
     schematic.parts[1].name = 'Vin'
     const result = compileSchematic(schematic)
     expect(result.errors.some((error) => error.includes('중복'))).toBe(true)
+  })
+})
+
+describe('단락 검출', () => {
+  it('부품 양 단자를 잇는 배선은 단락 오류를 낸다', () => {
+    const schematic = rcSchematic()
+    // R1(0,0)-(4,0)의 두 단자를 위로 우회해 직접 연결
+    schematic.wires.push(
+      { x1: 0, y1: 0, x2: 0, y2: -2 },
+      { x1: 0, y1: -2, x2: 4, y2: -2 },
+      { x1: 4, y1: -2, x2: 4, y2: 0 },
+    )
+    const result = compileSchematic(schematic)
+    expect(result.netlist).toBeUndefined()
+    expect(result.errors.some((error) => error.includes('단락'))).toBe(true)
+  })
+})
+
+describe('junctionPoints', () => {
+  const empty = (): Schematic => ({ parts: [], wires: [], grounds: [], probe: null })
+
+  it('T 분기(배선 내부에 다른 배선 끝점)에 접점을 찍는다', () => {
+    const schematic = empty()
+    schematic.wires = [
+      { x1: 0, y1: 0, x2: 4, y2: 0 },
+      { x1: 2, y1: 0, x2: 2, y2: 2 },
+    ]
+    expect(junctionPoints(schematic)).toEqual([{ x: 2, y: 0 }])
+  })
+
+  it('배선 내부에 놓인 부품 단자도 접점이다', () => {
+    const schematic = empty()
+    schematic.wires = [{ x1: 0, y1: 2, x2: 8, y2: 2 }]
+    schematic.parts = [
+      part({ id: 'p', kind: 'R', name: 'R1', value: '1k', x: 0, y: 2 }),
+      // R1의 두 번째 단자 (4,2)가 배선 내부에 얹힘
+    ]
+    expect(junctionPoints(schematic)).toEqual([{ x: 4, y: 2 }])
+  })
+
+  it('단순 L자 코너나 끝점 접속은 접점이 아니다', () => {
+    const schematic = empty()
+    schematic.wires = [
+      { x1: 0, y1: 0, x2: 4, y2: 0 },
+      { x1: 4, y1: 0, x2: 4, y2: 4 },
+    ]
+    expect(junctionPoints(schematic)).toEqual([])
   })
 })

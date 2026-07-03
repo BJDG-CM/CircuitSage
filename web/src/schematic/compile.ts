@@ -87,6 +87,34 @@ function wireLatticeKeys(wire: Wire): string[] {
   return keys
 }
 
+// 전기적으로 3갈래 이상이 만나는 격자점 — 캔버스에 접점(junction dot)을
+// 그리기 위한 계산. 배선 내부 통과는 두 방향(+2), 끝점/단자는 +1로 센다.
+export function junctionPoints(schematic: Schematic): Point[] {
+  const score = new Map<string, number>()
+  const bump = (key: string, amount: number) => {
+    score.set(key, (score.get(key) ?? 0) + amount)
+  }
+  for (const wire of schematic.wires) {
+    const keys = wireLatticeKeys(wire)
+    keys.forEach((key, index) => {
+      bump(key, index === 0 || index === keys.length - 1 ? 1 : 2)
+    })
+  }
+  for (const part of schematic.parts) {
+    for (const terminal of terminals(part)) {
+      bump(pointKey(terminal.x, terminal.y), 1)
+    }
+  }
+  const points: Point[] = []
+  for (const [key, value] of score) {
+    if (value >= 3) {
+      const [x, y] = key.split(',').map(Number)
+      points.push({ x, y })
+    }
+  }
+  return points
+}
+
 export function compileSchematic(schematic: Schematic): CompileResult {
   const errors: string[] = []
   if (schematic.parts.length === 0) errors.push('소자가 없습니다.')
@@ -125,6 +153,21 @@ export function compileSchematic(schematic: Schematic): CompileResult {
       netNames.set(root, name)
     }
     return name
+  }
+
+  // 그리다가 만든 단락(양 단자가 같은 net)을 netlist로 내보내기 전에 잡는다
+  const shorted = schematic.parts.filter((part) => {
+    const [first, second] = terminals(part)
+    return (
+      nets.find(pointKey(first.x, first.y)) === nets.find(pointKey(second.x, second.y))
+    )
+  })
+  if (shorted.length > 0) {
+    return {
+      errors: shorted.map(
+        (part) => `${part.name}: 두 단자가 같은 net에 연결되어 있습니다 (배선 단락)`,
+      ),
+    }
   }
 
   const lines = ['* CircuitSage 회로도에서 컴파일됨']

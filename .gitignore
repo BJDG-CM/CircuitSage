@@ -8,3 +8,5 @@ build/
 .hypothesis/
 node_modules/
 *.db
+
+.claude/
