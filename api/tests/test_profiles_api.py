@@ -13,6 +13,10 @@ def _solve(client, netlist=RC_NUMERIC, **options):
 
 
 class TestRateLimiting:
+    @pytest.fixture(autouse=True)
+    def _isolated_db(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CIRCUITSAGE_DB", str(tmp_path / "rate.db"))
+
     def test_limit_returns_429_with_stable_code(self, monkeypatch):
         monkeypatch.setenv("CIRCUITSAGE_RATE_LIMIT_PER_MINUTE", "3")
         client = TestClient(create_app())
@@ -29,14 +33,33 @@ class TestRateLimiting:
         for _ in range(5):
             assert _solve(client).status_code == 200
 
-    def test_limiter_state_is_per_app_instance(self, monkeypatch):
-        # 단일 인스턴스 한정 in-memory 리미터: 앱을 새로 만들면 초기화된다
+    def test_limiter_state_survives_restart(self, monkeypatch):
+        # SQLite 저장이므로 앱(프로세스) 재시작을 시뮬레이션해도 창이 유지된다
         monkeypatch.setenv("CIRCUITSAGE_RATE_LIMIT_PER_MINUTE", "1")
         first = TestClient(create_app())
         assert _solve(first).status_code == 200
         assert _solve(first).status_code == 429
-        second = TestClient(create_app())
-        assert _solve(second).status_code == 200
+        second = TestClient(create_app())  # "재시작"한 새 앱 인스턴스
+        assert _solve(second).status_code == 429
+
+    def test_window_expiry_frees_the_bucket(self, monkeypatch, tmp_path):
+        import sqlite3
+
+        monkeypatch.setenv("CIRCUITSAGE_RATE_LIMIT_PER_MINUTE", "1")
+        client = TestClient(create_app())
+        assert _solve(client).status_code == 200
+        assert _solve(client).status_code == 429
+        # 이벤트를 창 밖(과거)으로 밀어내면 다시 허용되어야 한다
+        with sqlite3.connect(tmp_path / "rate.db") as connection:
+            connection.execute("UPDATE rate_events SET ts = ts - 3600")
+        assert _solve(client).status_code == 200
+
+    def test_fails_open_when_database_unusable(self, monkeypatch):
+        monkeypatch.setenv("CIRCUITSAGE_RATE_LIMIT_PER_MINUTE", "1")
+        monkeypatch.setenv("CIRCUITSAGE_DB", "Z:/nonexistent-dir/rate.db")
+        client = TestClient(create_app())
+        for _ in range(3):
+            assert _solve(client).status_code == 200
 
 
 class TestHealth:
