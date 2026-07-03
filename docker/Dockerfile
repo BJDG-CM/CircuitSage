@@ -1,6 +1,8 @@
 # CircuitSage 배포 이미지 (design §2.2: 전체를 이미지 하나로, ngspice 포함)
-# 빌드:  docker build -f docker/Dockerfile -t circuitsage .
-# 실행:  docker run -p 8000:8000 -v circuitsage-data:/data circuitsage
+# 빌드:        docker build -f docker/Dockerfile -t circuitsage .
+# 로컬 실행:   docker run --rm -p 127.0.0.1:8000:8000 -v circuitsage-data:/data circuitsage
+#   (127.0.0.1 바인딩이 로컬 기본값 — 외부 공개는 CIRCUITSAGE_MODE=public-demo와
+#    함께 의도적으로만)
 
 # --- 1단계: 프런트엔드 빌드 -------------------------------------------------
 FROM node:22-slim AS webbuild
@@ -32,5 +34,5 @@ VOLUME /data
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s \
-    CMD curl -sf http://localhost:8000/api/examples > /dev/null || exit 1
+    CMD curl -sf http://localhost:8000/api/health > /dev/null || exit 1
 CMD ["uvicorn", "circuitsage_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
