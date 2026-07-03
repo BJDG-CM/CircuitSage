@@ -70,7 +70,18 @@ def _stamp_entries(
     p = node_index.get(comp.nodes[0])
     m = node_index.get(comp.nodes[1])
 
-    if comp.ctype in _PASSIVE:
+    if comp.ctype is ComponentType.INDUCTOR and comp.name in current_index:
+        # Group-2 인덕터 (가지 전류 미지수): KCL 기여 + 가지 방정식
+        # v_p − v_m − sL·i_L = 0. system_modes()가 쓰는 정식화로,
+        # det A(s)가 s의 다항식이 되고 이상 전압원 뒤에 가려지던
+        # 인덕터 전류 상태(예: s=0 적분기 모드)도 pencil에 나타난다.
+        k = current_index[comp.name]
+        yield ("A", p, k, sp.Integer(1))
+        yield ("A", m, k, sp.Integer(-1))
+        yield ("A", k, p, sp.Integer(1))
+        yield ("A", k, m, sp.Integer(-1))
+        yield ("A", k, k, -s * comp.value)
+    elif comp.ctype in _PASSIVE:
         y = _admittance(comp)
         yield ("A", p, p, y)
         yield ("A", m, m, y)
@@ -115,11 +126,23 @@ def replay_checkpoints(
     return snapshots
 
 
-def assemble(circuit: Circuit) -> MNASystem:
-    """Assemble the symbolic MNA system in one pass over the components."""
+def assemble(
+    circuit: Circuit, inductor_branch_currents: bool = False
+) -> MNASystem:
+    """Assemble the symbolic MNA system in one pass over the components.
+
+    ``inductor_branch_currents=True`` puts inductors into Group 2 (their
+    currents become unknowns with the branch row v_p − v_m − sL·i = 0)
+    instead of the 1/(sL) admittance form. The solve path keeps the
+    default (smaller matrix); system_modes() uses the branch form so the
+    characteristic pencil is polynomial in s and inductor-current states
+    are never hidden behind ideal-source constraints.
+    """
     nodes = tuple(node for node in circuit.nodes if node != GROUND)
     node_index = {node: i for i, node in enumerate(nodes)}
-    group2 = circuit.by_type(ComponentType.VOLTAGE_SOURCE)
+    group2 = list(circuit.by_type(ComponentType.VOLTAGE_SOURCE))
+    if inductor_branch_currents:
+        group2 += circuit.by_type(ComponentType.INDUCTOR)
     current_index = {comp.name: len(nodes) + i for i, comp in enumerate(group2)}
 
     size = len(nodes) + len(group2)

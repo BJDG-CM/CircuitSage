@@ -411,25 +411,26 @@ class SystemModes:
 def system_modes(circuit: Circuit) -> SystemModes:
     """Natural modes from det A(s) of the MNA system.
 
-    Method: A(s) entries are rational in s (an inductor contributes the
-    admittance 1/(sL)), so det A(s) is a rational function. cancel()
-    reduces it; the reduced numerator N(s) vanishes exactly where A(s)
-    drops rank — the natural frequencies representable in this MNA
-    admittance formulation. Clearing-denominator artifacts (s^k factors
-    from 1/(sL)) are removed by the same cancellation rather than being
-    reported as modes, and the constant scale/sign is normalized away.
+    Method: the system is assembled with capacitors as admittances (sC)
+    and **inductors as Group-2 branches** (unknown current i_L with the
+    row v_p − v_m − sL·i_L = 0), so every entry of A(s) is polynomial in
+    s and det A(s) is a polynomial pencil determinant. Its roots are
+    exactly the frequencies where the pencil loses rank — the natural
+    frequencies of the circuit, *including* inductor-current states that
+    the plain 1/(sL) admittance form hides behind ideal-source
+    constraints (an inductor directly across an ideal voltage source
+    correctly shows its s = 0 integrator mode here). The constant
+    scale/sign is normalized away; cancel() is still applied defensively
+    before extracting the numerator.
 
-    Honest limits of the formulation, stated in ``note``:
+    Honest limits, stated in ``note``:
       * degenerate topologies legitimately reduce the detected order
         (e.g. two parallel capacitors form one mode);
-      * a state hidden behind an ideal source constraint (an inductor
-        directly across an ideal voltage source) does not appear in
-        det A(s) and cannot be reported here;
       * if det A(s) is identically zero the pencil is singular and the
         result is status="unknown" instead of a fabricated answer.
     """
     validate_topology(circuit)
-    system = assemble(circuit)
+    system = assemble(circuit, inductor_branch_currents=True)
     if system.A.shape[0] == 0:
         return SystemModes(None, None, "unknown", "MNA 시스템이 비어 있음", None)
 
@@ -473,8 +474,9 @@ def system_modes(circuit: Circuit) -> SystemModes:
     degree = poly.degree()
     note = (
         f"검출된 동적 차수 {degree} (리액티브 소자 {reactive_count}개). "
-        "축퇴 위상은 차수를 낮출 수 있고, 이상 전원 구속에 가려진 상태"
-        "(예: 이상 전압원에 직결된 인덕터 전류)는 이 정식화에 나타나지 않는다."
+        "인덕터는 가지 전류 정식화로 조립되어 이상 전원에 직결된 상태도 "
+        "포함된다; 축퇴 위상(예: 병렬 커패시터, 이상 전압원에 직결된 "
+        "커패시터)은 독립 상태가 줄어 차수가 정당하게 낮아질 수 있다."
     )
     status = "ok"
     if degree > reactive_count:

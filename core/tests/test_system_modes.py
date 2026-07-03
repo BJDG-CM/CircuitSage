@@ -75,6 +75,29 @@ class TestAgreementWithoutCancellation:
             assert sp.simplify(modes.characteristic.subs(s, pole)) == 0
 
 
+class TestInductorBranchFormulation:
+    def test_inductor_across_ideal_source_shows_integrator_mode(self):
+        # 어드미턴스 정식화에서는 det가 상수가 되어 보이지 않던 상태:
+        # 이상 전압원에 직결된 인덕터의 전류는 s=0 적분기 모드다.
+        circuit = parse("Vin a 0 Vi\nL1 a 0 L\n.out V(a) Vin\n")
+        modes = system_modes(circuit)
+        assert modes.status == "ok"
+        assert modes.modes.roots == ((0, 1),)
+        assert modes.stability is not None
+        assert modes.stability.verdict == "marginal"  # jω축(원점) 모드
+
+    def test_rl_mode_matches_transfer_pole(self):
+        circuit = parse("Vin in 0 Vi\nR1 in out R\nL1 out 0 L\n.out V(out) Vin\n")
+        pole = pole_zero(transfer_function(circuit)).poles.values[0]
+        modes = system_modes(circuit)
+        assert len(modes.modes.roots) == 1
+        assert sp.simplify(modes.modes.values[0] - pole) == 0
+
+    def test_note_reflects_branch_formulation(self):
+        modes = system_modes(parse("Vin a 0 Vi\nL1 a 0 L\n.out V(a) Vin\n"))
+        assert "가지 전류" in modes.note
+
+
 class TestDegenerateCases:
     def test_static_circuit_has_no_modes(self):
         modes = system_modes(parse("Vin in 0 Vi\nR1 in out 1k\nR2 out 0 2k\n.out V(out) Vin\n"))
