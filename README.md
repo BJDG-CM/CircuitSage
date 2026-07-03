@@ -23,13 +23,19 @@ Given a SPICE-like netlist, CircuitSage can:
 
 - assemble the symbolic MNA system \(A(s)x=z(s)\)
 - derive the transfer function \(H(s)=V_o(s)/V_i(s)\)
-- calculate poles, zeros, and stability
-- obtain impulse and step responses in closed form
+- calculate transfer poles and zeros, **plus internal system modes derived
+  independently from \(\det A(s)\)** — a mode cancelled in H(s) is still reported
+- judge transfer stability and internal stability separately (Routh–Hurwitz or numeric)
+- obtain impulse and step responses in closed form where one exists
 - generate exact and asymptotic Bode data
 - handle capacitor and inductor initial conditions
 - record element stamps and circuit-reduction steps
 - export a lecture-note-style LaTeX report
-- optionally cross-check results against ngspice
+- optionally cross-check results against ngspice (when installed)
+
+CircuitSage is **local-first**: analysis runs entirely on your machine with no
+external service. The same app can optionally be exposed as a restricted public
+demo (see [Operating profiles](#operating-profiles-and-safety)).
 
 The project is designed as both an **educational circuit-analysis tool** and a **verifiable symbolic computation system**.
 
@@ -39,7 +45,7 @@ The project is designed as both an **educational circuit-analysis tool** and a *
 |---|---|
 | Symbolic engine | Exact arithmetic with SymPy, symbolic component values, MNA stamp assembly |
 | Dynamics | Initial-condition equivalents, zero-state/zero-input decomposition, inverse Laplace transform |
-| Stability | Pole-zero extraction and Routh–Hurwitz analysis, including zero-pivot and zero-row cases |
+| Stability | Transfer poles vs. internal system modes, Routh–Hurwitz analysis including zero-pivot and zero-row cases |
 | Topology | Ground and floating-node checks, source-loop/cut-set detection, planarity analysis |
 | Visualization | Interactive time-response and Bode plots with asymptotic magnitude curves |
 | Explanation | Per-component stamp deltas, MNA checkpoints, series/parallel/source transformations |
@@ -81,10 +87,13 @@ The Docker image contains the frontend, API, symbolic engine, and ngspice.
 
 ```bash
 docker build -f docker/Dockerfile -t circuitsage .
-docker run --rm -p 8000:8000 -v circuitsage-data:/data circuitsage
+docker run --rm -p 127.0.0.1:8000:8000 -v circuitsage-data:/data circuitsage
 ```
 
-Open **http://localhost:8000**.
+Open **http://localhost:8000**. The `127.0.0.1` binding keeps the container
+local-only; expose it deliberately (ideally with `CIRCUITSAGE_MODE=public-demo`)
+if you want it reachable from elsewhere. Shared circuits persist in the
+`circuitsage-data` volume, and `/api/health` backs the container health check.
 
 ### Local Development
 
@@ -113,6 +122,16 @@ npm run dev
 ```
 
 Open **http://localhost:5173**.
+
+Helper scripts automate the checks above (they verify Python/Node and warn —
+without failing — when ngspice is absent):
+
+```bash
+./scripts/dev.sh          # Unix: dependency checks, then API + Vite
+.\scripts\dev.ps1         # Windows PowerShell equivalent
+python scripts/launch.py  # start backend on 127.0.0.1, wait for /api/health,
+                          # open the browser, clean shutdown on Ctrl+C
+```
 
 ## Netlist Syntax
 
@@ -148,7 +167,9 @@ flowchart LR
     B --> C[Topology validation]
     C --> D[Symbolic MNA assembly]
     D --> E[Transfer function]
-    E --> F[Poles, zeros, stability]
+    D --> M[System modes from det A]
+    E --> F[Transfer poles, zeros, stability]
+    M --> F
     E --> G[Impulse and step response]
     E --> H[Bode data]
     D --> I[Derivation and simplification steps]
@@ -214,14 +235,18 @@ Content-Type: application/json
 
 The response can include:
 
-- topology and planarity information
+- topology, planarity, and a complexity report (component/node/symbol counts, MNA dimension)
 - MNA matrices, unknowns, stamps, and checkpoints
-- transfer function, poles, zeros, and stability
+- transfer function with its reduced denominator, transfer poles and zeros
+- `transfer_stability` (from the reduced H(s) denominator) and `system_modes`
+  (internal modes from \(\det A(s)\), including modes cancelled in H(s), with
+  their own `internal_stability` verdict and a status of `ok`/`static`/`partial`/`unknown`)
 - impulse and step responses with sampled data
 - Bode magnitude, phase, corner frequencies, and asymptotes
 - circuit-simplification steps
-- ngspice error reports
+- ngspice verification with status `ok`/`error`/`unavailable` and error reports
 - generated LaTeX source
+- solver diagnostics (backend, stage timings) when `options.debug` is set
 
 Additional endpoints:
 
@@ -295,7 +320,7 @@ CircuitSage/
 
 ## Current Scope
 
-CircuitSage currently targets small and medium-sized **linear, lumped, time-invariant circuits** composed of:
+CircuitSage currently targets small **linear, lumped, time-invariant circuits** composed of:
 
 - resistors
 - inductors
@@ -303,15 +328,59 @@ CircuitSage currently targets small and medium-sized **linear, lumped, time-inva
 - independent voltage sources
 - independent current sources
 
-The default API limit is 15 components and can be configured with `CIRCUITSAGE_MAX_COMPONENTS`.
+**Not supported:** dependent sources (VCVS/VCCS/CCCS/CCVS), operational
+amplifiers, coupled inductors / transformers, transmission lines, switches, and
+all nonlinear devices (diodes, transistors). Unsupported elements are rejected
+at parse time with the offending line number.
 
-CircuitSage is intended for symbolic analysis, education, and verification. It is not a replacement for a full industrial SPICE simulator or a nonlinear device simulator.
+CircuitSage is intended for symbolic analysis, education, and verification. It
+is not a replacement for a full industrial SPICE simulator or a nonlinear
+device simulator.
+
+### Performance expectations
+
+Symbolic solving cost is driven mainly by the number of *independent symbolic
+parameters*, not by component count, and it grows quickly — see
+[docs/benchmarks.md](docs/benchmarks.md) for measured numbers and how the
+solver backend is chosen. There is no guarantee that an arbitrary circuit can
+be solved symbolically in reasonable time; that is why every solve runs behind
+a killable worker process with a hard timeout and preflight complexity limits.
+
+## Operating profiles and safety
+
+`CIRCUITSAGE_MODE` selects one of two profiles:
+
+| | `local` (default) | `public-demo` |
+|---|---|---|
+| Intent | Trusted single user on localhost | Restricted shared demo, single instance |
+| Complexity limits | Generous, each configurable, `0` disables | Strict (12 components, 24×24 MNA, 6 symbols, 10 kB netlist) |
+| Solve timeout | 30 s default; `0` runs in-process without isolation | Mandatory, clamped to 1–120 s |
+| Rate limiting | Off | 20 solve requests/min per client IP |
+| Share records | No TTL, unbounded | 20 kB payload cap, 7-day TTL, 2 000-row retention with request-triggered cleanup |
+| Errors | Structured codes, no tracebacks | Same, never leaks tracebacks |
+
+Every solve executes in a separate worker process that is killed on timeout —
+SymPy computations cannot be interrupted any other way. The rate limiter is an
+in-memory, single-instance mechanism: it resets on restart and is not shared
+across replicas, which is appropriate for a personal deployment and nothing more.
 
 ## Configuration
 
-| Environment variable | Default | Description |
-|---|---:|---|
-| `CIRCUITSAGE_MAX_COMPONENTS` | `15` | Maximum components accepted by the solve API |
+| Environment variable | Default (`local` / `public-demo`) | Description |
+|---|---|---|
+| `CIRCUITSAGE_MODE` | `local` | Operating profile (`local` \| `public-demo`) |
+| `CIRCUITSAGE_SOLVE_TIMEOUT_SECONDS` | `30` / forced ≥ 1 | Hard worker-process timeout; `0` = in-process trusted mode (local only) |
+| `CIRCUITSAGE_MAX_COMPONENTS` | `15` / `12` | Component-count limit (`0` disables, local only) |
+| `CIRCUITSAGE_MAX_MNA_DIMENSION` | `40` / `24` | MNA matrix dimension limit |
+| `CIRCUITSAGE_MAX_SYMBOLS` | `16` / `6` | Independent symbolic-parameter limit |
+| `CIRCUITSAGE_MAX_NETLIST_BYTES` | `200000` / `10000` | Netlist size limit (checked before parsing) |
+| `CIRCUITSAGE_RATE_LIMIT_PER_MINUTE` | off / `20` | Per-IP solve rate limit (single-instance, in-memory) |
+| `CIRCUITSAGE_SOLVER` | `auto` | Solve backend override (`auto` \| `lusolve` \| `cramer`) |
+| `CIRCUITSAGE_NGSPICE_TIMEOUT_SECONDS` | `60` | ngspice subprocess timeout |
+| `CIRCUITSAGE_SHARE_MAX_BYTES` | `200000` / `20000` | Share payload size cap |
+| `CIRCUITSAGE_SHARE_TTL_SECONDS` | off / `604800` | Share-record expiration |
+| `CIRCUITSAGE_SHARE_MAX_ROWS` | off / `2000` | Bounded share retention (oldest deleted first) |
+| `CIRCUITSAGE_CORS_ORIGINS` | dev origin / unset | Extra allowed CORS origins (comma-separated) |
 | `CIRCUITSAGE_EXAMPLES_DIR` | `./examples` | Directory containing bundled `.cir` files |
 | `CIRCUITSAGE_DB` | `./circuitsage.db` | SQLite path for shared circuits |
 | `CIRCUITSAGE_STATIC_DIR` | unset | Built frontend directory served by FastAPI |
