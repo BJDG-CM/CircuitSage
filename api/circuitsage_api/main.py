@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -16,8 +17,17 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import MODE_LOCAL, get_settings
 from .errors import register_exception_handlers
+from .isolation import warm_pool
 from .ratelimit import RateLimiter
 from .routes import examples, health, share, solve
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # 격리 모드라면 첫 요청 전에 워커를 예열해 spawn 기동 비용을 숨긴다
+    if get_settings().solve_timeout > 0:
+        warm_pool()
+    yield
 
 
 def _cors_origins() -> list[str]:
@@ -30,7 +40,7 @@ def _cors_origins() -> list[str]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CircuitSage API", version="0.1.0")
+    app = FastAPI(title="CircuitSage API", version="0.1.0", lifespan=_lifespan)
     origins = _cors_origins()
     if origins:
         app.add_middleware(
