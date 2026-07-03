@@ -27,7 +27,11 @@ const DEFAULT_VALUES: Record<PartKind, string> = {
 
 const toPx = (grid: number) => grid * GRID + PAD
 
-export function SchematicEditor({ onCompile }: { onCompile: (netlist: string) => void }) {
+export default function SchematicEditor({
+  onCompile,
+}: {
+  onCompile: (netlist: string) => void
+}) {
   const [schematic, setSchematic] = useState<Schematic>({
     parts: [],
     wires: [],

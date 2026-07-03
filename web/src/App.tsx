@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { createShare, fetchExamples, fetchShare, solve, SolveError } from './api'
 import type { SolveResult } from './api'
-import { SchematicEditor } from './schematic/SchematicEditor'
-import {
-  BodeTab,
-  LatexTab,
-  MnaTab,
-  ResponseTab,
-  SimplifyTab,
-  SummaryTab,
-  VerifyTab,
-} from './tabs'
+
+// 무거운 결과 뷰(Plotly, KaTeX)와 회로도 에디터는 필요해질 때 로드한다.
+const SummaryTab = lazy(() => import('./tabs/SummaryTab'))
+const MnaTab = lazy(() => import('./tabs/MnaTab'))
+const ResponseTab = lazy(() => import('./tabs/ResponseTab'))
+const BodeTab = lazy(() => import('./tabs/BodeTab'))
+const SimplifyTab = lazy(() => import('./tabs/SimplifyTab'))
+const LatexTab = lazy(() => import('./tabs/LatexTab'))
+const VerifyTab = lazy(() => import('./tabs/VerifyTab'))
+const SchematicEditor = lazy(() => import('./schematic/SchematicEditor'))
 
 const DEFAULT_NETLIST = `* RC 1차 저역통과 — H(s) = 1/(1+sRC)
 Vin  in  0    Vi
@@ -58,6 +58,7 @@ export default function App() {
   const [inputError, setInputError] = useState<string | null>(null)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [editorMode, setEditorMode] = useState<'text' | 'schematic'>('text')
+  const [schematicMounted, setSchematicMounted] = useState(false)
 
   const examples = useQuery({ queryKey: ['examples'], queryFn: fetchExamples })
 
@@ -155,7 +156,10 @@ export default function App() {
           </button>
           <button
             className={editorMode === 'schematic' ? 'active' : ''}
-            onClick={() => setEditorMode('schematic')}
+            onClick={() => {
+              setEditorMode('schematic')
+              setSchematicMounted(true)
+            }}
           >
             회로도
           </button>
@@ -170,12 +174,16 @@ export default function App() {
           />
         </div>
         <div style={{ display: editorMode === 'schematic' ? 'block' : 'none' }}>
-          <SchematicEditor
-            onCompile={(compiled) => {
-              setNetlist(compiled)
-              setEditorMode('text')
-            }}
-          />
+          {schematicMounted && (
+            <Suspense fallback={<p className="muted">회로도 에디터 로딩 중…</p>}>
+              <SchematicEditor
+                onCompile={(compiled) => {
+                  setNetlist(compiled)
+                  setEditorMode('text')
+                }}
+              />
+            </Suspense>
+          )}
         </div>
 
         <label className="field-label">
@@ -193,7 +201,7 @@ export default function App() {
             checked={wantVerify}
             onChange={(event) => setWantVerify(event.target.checked)}
           />
-          ngspice 검증
+          ngspice 검증 (선택 — 서버에 ngspice 필요)
         </label>
         <label className="checkbox">
           <input
@@ -245,13 +253,17 @@ export default function App() {
         </nav>
         <div className="tab-body">
           {!mutation.data && <p className="muted">좌측에서 회로를 해석하면 결과가 표시됩니다.</p>}
-          {mutation.data && tab === 'summary' && <SummaryTab result={mutation.data} />}
-          {mutation.data && tab === 'mna' && <MnaTab result={mutation.data} />}
-          {mutation.data && tab === 'response' && <ResponseTab result={mutation.data} />}
-          {mutation.data && tab === 'bode' && <BodeTab result={mutation.data} />}
-          {mutation.data && tab === 'simplify' && <SimplifyTab result={mutation.data} />}
-          {mutation.data && tab === 'latex' && <LatexTab result={mutation.data} />}
-          {mutation.data && tab === 'verify' && <VerifyTab result={mutation.data} />}
+          {mutation.data && (
+            <Suspense fallback={<p className="muted">결과 뷰 로딩 중…</p>}>
+              {tab === 'summary' && <SummaryTab result={mutation.data} />}
+              {tab === 'mna' && <MnaTab result={mutation.data} />}
+              {tab === 'response' && <ResponseTab result={mutation.data} />}
+              {tab === 'bode' && <BodeTab result={mutation.data} />}
+              {tab === 'simplify' && <SimplifyTab result={mutation.data} />}
+              {tab === 'latex' && <LatexTab result={mutation.data} />}
+              {tab === 'verify' && <VerifyTab result={mutation.data} />}
+            </Suspense>
+          )}
         </div>
       </main>
     </div>
