@@ -20,6 +20,7 @@ from .analysis import (
 )
 from .bode import BodeData, bode_data
 from .circuit import Circuit, Component, ComponentType, OutputSpec
+from .complexity import ComplexityReport, measure_complexity
 from .errors import (
     CircuitError,
     CurrentSourceCutsetError,
@@ -51,6 +52,8 @@ __all__ = [
     "BodeData",
     "Circuit",
     "CircuitError",
+    "ComplexityReport",
+    "measure_complexity",
     "Component",
     "ComponentType",
     "CurrentSourceCutsetError",

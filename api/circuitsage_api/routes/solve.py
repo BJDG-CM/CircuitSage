@@ -8,8 +8,6 @@ H(s) → pole/zero → 안정성 → 시간응답(+수치 샘플) → Bode → (
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import sympy as sp
 from fastapi import APIRouter
@@ -28,6 +26,7 @@ from circuitsolver import (
     validate_topology,
 )
 from circuitsolver.analysis import PoleZeroResult, RootSet
+from circuitsolver.complexity import measure_complexity
 from circuitsolver.errors import CircuitError, InverseLaplaceError
 from circuitsolver.laplace import t
 from circuitsolver.mna import replay_checkpoints
@@ -35,16 +34,13 @@ from circuitsolver.report import generate_report, routh_array_latex
 from circuitsolver.simplify import simplify_circuit
 from circuitsolver.verify import verify_ac, verify_tran
 
-from ..errors import TooManyComponentsError
+from ..config import get_settings
+from ..guards import enforce_complexity, enforce_netlist_size
 from ..schemas import SolveRequest
 
 router = APIRouter()
 
 _SAMPLE_POINTS = 200
-
-
-def _max_components() -> int:
-    return int(os.environ.get("CIRCUITSAGE_MAX_COMPONENTS", "15"))
 
 
 def _serialize_roots(roots: RootSet) -> dict:
@@ -94,18 +90,18 @@ def solve(request: SolveRequest) -> dict:
     options = request.options
     warnings: list[str] = []
 
+    settings = get_settings()
+    enforce_netlist_size(request.netlist, settings)
     circuit = parse(request.netlist)
-    limit = _max_components()
-    if len(circuit.components) > limit:
-        raise TooManyComponentsError(
-            f"{len(circuit.components)} components exceed the limit of {limit}"
-        )
+    complexity = measure_complexity(circuit, request.netlist)
+    enforce_complexity(complexity, settings)
     topology = validate_topology(circuit)
 
     system = assemble(expand_initial_conditions(circuit).circuit)
     result: dict = {
         "nodes": circuit.nodes,
         "planarity": {"planar": topology.is_planar},
+        "complexity": complexity.as_dict(),
         "mna": {
             "A_latex": sp.latex(system.A),
             "z_latex": sp.latex(system.z),
