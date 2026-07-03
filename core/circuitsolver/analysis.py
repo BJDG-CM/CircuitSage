@@ -1,14 +1,25 @@
 """Transfer function H(s) = V(out) / input (design §4.5).
 
-Pipeline: topology validation → MNA assembly → LUsolve → cancel.
+Pipeline: topology validation → MNA assembly → linear solve → cancel.
 Per §4.5, only cancel/together are used for cleanup — never simplify(),
-which can blow up exponentially on symbolic circuits. A Cramer-based
-backend is planned as a benchmark alternative (design §4.5, §12).
+which can blow up exponentially on symbolic circuits.
+
+Two solve backends exist (selected by benchmark evidence, see
+docs/benchmarks.md; override with CIRCUITSAGE_SOLVER=auto|lusolve|cramer):
+
+* ``lusolve`` — Matrix.LUsolve for the full unknown vector; fast for
+  numeric and few-symbol systems, and required when every node voltage
+  is needed (solve_node_voltages).
+* ``cramer``  — only the requested output as det(A_i)/det(A) via the
+  division-free Berkowitz determinant; avoids the nested-fraction
+  blow-up of LU pivots when many independent symbols are present.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import os
+import time
+from dataclasses import dataclass, field, replace
 
 import sympy as sp
 from sympy.matrices.exceptions import NonInvertibleMatrixError
@@ -29,6 +40,62 @@ def _lusolve(system: MNASystem) -> sp.Matrix:
             "MNA matrix is singular despite topology checks; likely causes: "
             "degenerate element values or a constraint loop not visible in the graph"
         ) from exc
+
+
+def _output_lusolve(system: MNASystem, index: int) -> sp.Expr:
+    return _lusolve(system)[index, 0]
+
+
+def _output_cramer(system: MNASystem, index: int) -> sp.Expr:
+    """Cramer's rule for a single output: det(A_i)/det(A), Berkowitz dets."""
+    det_a = sp.cancel(sp.together(system.A.det(method="berkowitz")))
+    if det_a == 0:
+        raise SingularMatrixError(
+            "MNA matrix is singular despite topology checks; likely causes: "
+            "degenerate element values or a constraint loop not visible in the graph"
+        )
+    replaced = system.A.copy()
+    replaced[:, index] = system.z
+    det_i = replaced.det(method="berkowitz")
+    return sp.cancel(det_i / det_a)
+
+
+_BACKENDS = {"lusolve": _output_lusolve, "cramer": _output_cramer}
+
+
+@dataclass(frozen=True)
+class SolverDiagnostics:
+    """Internal diagnostics for one transfer-function solve.
+
+    Not shown in the main UI by default; the API exposes it only when
+    options.debug is set.
+    """
+
+    backend: str
+    matrix_dimension: int
+    symbol_count: int
+    stage_timings: dict[str, float] = field(default_factory=dict)
+    fallback_used: bool = False
+
+
+def _choose_backend(requested: str, symbol_count: int) -> str:
+    """Backend selection.
+
+    Evidence (docs/benchmarks.md, ladder/bridge/V-source suite): the cost
+    driver is the count of *independent* symbols, because the LU pivot
+    fractions make the final rational cancel explode while the
+    division-free Cramer/Berkowitz path stays flat. Measured: repeated-
+    symbol ladder (3 symbols) LU ~10× faster; RLC (4 symbols) LU ~2×
+    faster; three V-source branches (5 symbols) LU catastrophic
+    (~20–48 min in the final cancel) vs Cramer ~0.45 s; symbolic bridge
+    (6 symbols) Cramer ~38× faster; unique ladder at 11 symbols Cramer
+    ~80× faster. LU still wins at 3–4 symbols, and its downside above
+    that is unbounded while Cramer's overhead below it is a few
+    milliseconds → threshold 5.
+    """
+    if requested != "auto":
+        return requested
+    return "cramer" if symbol_count >= 5 else "lusolve"
 
 
 def solve_node_voltages(circuit: Circuit, validate: bool = True) -> dict[str, sp.Expr]:
@@ -423,20 +490,31 @@ def system_modes(circuit: Circuit) -> SystemModes:
     )
 
 
-def transfer_function(circuit: Circuit) -> TransferFunction:
+def transfer_function_with_diagnostics(
+    circuit: Circuit, backend: str = "auto"
+) -> tuple[TransferFunction, SolverDiagnostics]:
     """Compute H(s) as specified by the netlist's .out directive.
 
     H(s) is defined with every other independent source switched off
     (V → short, I → open); zeroing their values achieves both in MNA.
+    ``backend`` is "auto" | "lusolve" | "cramer"; "auto" consults the
+    CIRCUITSAGE_SOLVER environment variable first, then the benchmark
+    heuristic (_choose_backend). A failing non-default backend falls
+    back to lusolve and sets diagnostics.fallback_used.
     """
     if circuit.output is None:
         raise CircuitError("netlist has no .out directive; cannot form H(s)")
+
+    timings: dict[str, float] = {}
+    started = time.perf_counter()
     validate_topology(circuit)
+    timings["topology"] = time.perf_counter() - started
 
     source = circuit.component(circuit.output.source)
     if source.value == 0:
         raise CircuitError(f"input source {source.name} has zero value")
 
+    started = time.perf_counter()
     others_zeroed = tuple(
         replace(comp, value=sp.Integer(0))
         if comp.ctype in SOURCE_TYPES and comp.name != source.name
@@ -444,19 +522,60 @@ def transfer_function(circuit: Circuit) -> TransferFunction:
         for comp in circuit.components
     )
     system = assemble(Circuit(components=others_zeroed, output=circuit.output))
-    x = _lusolve(system)
+    timings["assemble"] = time.perf_counter() - started
 
+    symbol_count = len(
+        (system.A.free_symbols | system.z.free_symbols | source.value.free_symbols)
+        - {s}
+    )
+    requested = backend
+    if requested == "auto":
+        requested = os.environ.get("CIRCUITSAGE_SOLVER", "auto").strip().lower()
+    if requested not in ("auto", *_BACKENDS):
+        raise CircuitError(f"unknown solver backend '{requested}'")
+    chosen = _choose_backend(requested, symbol_count)
+
+    started = time.perf_counter()
+    fallback_used = False
     if circuit.output.node == GROUND:
         v_out = sp.Integer(0)
     else:
-        v_out = x[system.node_index[circuit.output.node], 0]
+        index = system.node_index[circuit.output.node]
+        try:
+            v_out = _BACKENDS[chosen](system, index)
+        except SingularMatrixError:
+            raise
+        except Exception:  # noqa: BLE001 — backend bug must not lose the solve
+            if chosen == "lusolve":
+                raise
+            v_out = _output_lusolve(system, index)
+            chosen = "lusolve"
+            fallback_used = True
+    timings["solve"] = time.perf_counter() - started
 
+    started = time.perf_counter()
     expr = sp.cancel(v_out / source.value)
     numerator, denominator = sp.fraction(expr)
-    return TransferFunction(
+    timings["normalize"] = time.perf_counter() - started
+
+    tf = TransferFunction(
         expr=expr,
         numerator=numerator,
         denominator=denominator,
         output_node=circuit.output.node,
         input_source=source.name,
     )
+    diagnostics = SolverDiagnostics(
+        backend=chosen,
+        matrix_dimension=system.A.shape[0],
+        symbol_count=symbol_count,
+        stage_timings=timings,
+        fallback_used=fallback_used,
+    )
+    return tf, diagnostics
+
+
+def transfer_function(circuit: Circuit, backend: str = "auto") -> TransferFunction:
+    """H(s) only — see transfer_function_with_diagnostics."""
+    tf, _ = transfer_function_with_diagnostics(circuit, backend)
+    return tf

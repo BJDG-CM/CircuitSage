@@ -26,10 +26,10 @@ from circuitsolver import (
     pole_zero,
     step_response,
     system_modes,
-    transfer_function,
     transfer_stability,
     validate_topology,
 )
+from circuitsolver.analysis import transfer_function_with_diagnostics
 from circuitsolver.analysis import PoleZeroResult, RootSet, StabilityResult
 from circuitsolver.complexity import measure_complexity
 from circuitsolver.errors import CircuitError, InverseLaplaceError
@@ -138,7 +138,16 @@ def run_solve(netlist: str, options: Mapping | None = None) -> dict:
         },
     }
 
-    tf = transfer_function(circuit)
+    tf, solver_diagnostics = transfer_function_with_diagnostics(circuit)
+    if opts.get("debug"):
+        # 기본 UI에는 노출하지 않는 내부 진단 — debug 옵션에서만
+        result["diagnostics"] = {
+            "backend": solver_diagnostics.backend,
+            "matrix_dimension": solver_diagnostics.matrix_dimension,
+            "symbol_count": solver_diagnostics.symbol_count,
+            "stage_timings": solver_diagnostics.stage_timings,
+            "fallback_used": solver_diagnostics.fallback_used,
+        }
     result["transfer_function"] = {
         "latex": sp.latex(tf.expr),
         "numerator": sp.latex(tf.numerator),

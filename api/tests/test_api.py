@@ -62,6 +62,16 @@ class TestSolveHappyPath:
         body = _solve(client, RC_NUMERIC, latex=True).json()
         assert body["latex_report"].startswith("\\documentclass")
 
+    def test_debug_option_exposes_solver_diagnostics(self, client):
+        body = _solve(client, RC_NUMERIC, debug=True).json()
+        diagnostics = body["diagnostics"]
+        assert diagnostics["backend"] in ("lusolve", "cramer")
+        assert diagnostics["matrix_dimension"] == 3
+        assert "solve" in diagnostics["stage_timings"]
+
+    def test_diagnostics_hidden_by_default(self, client):
+        assert "diagnostics" not in _solve(client, RC_NUMERIC).json()
+
     def test_missing_ngspice_reports_unavailable_status(self, client, monkeypatch):
         monkeypatch.setattr("circuitsage_api.pipeline.find_ngspice", lambda: None)
         body = _solve(client, RC_NUMERIC, verify=True).json()

@@ -15,6 +15,7 @@ class SolveOptions(BaseModel):
     responses: list[ResponseKind] = Field(default_factory=lambda: ["impulse", "step"])
     verify: bool = False
     latex: bool = False
+    debug: bool = False  # 솔버 진단(백엔드, 단계별 시간)을 응답에 포함
 
 
 class SolveRequest(BaseModel):
