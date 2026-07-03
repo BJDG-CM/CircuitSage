@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from circuitsolver import parse
 from circuitsolver.complexity import measure_complexity
@@ -17,15 +17,17 @@ from ..config import get_settings
 from ..guards import enforce_complexity, enforce_netlist_size
 from ..isolation import run_isolated
 from ..pipeline import run_solve
+from ..ratelimit import enforce_rate_limit
 from ..schemas import SolveRequest
 
 router = APIRouter()
 
 
 @router.post("/solve")
-def solve(request: SolveRequest) -> dict:
+def solve(request: SolveRequest, http_request: Request) -> dict:
     settings = get_settings()
 
+    enforce_rate_limit(http_request, settings)
     enforce_netlist_size(request.netlist, settings)
     circuit = parse(request.netlist)
     complexity = measure_complexity(circuit, request.netlist)
