@@ -47,6 +47,14 @@ export interface StabilityDto {
   notes: string[]
 }
 
+export interface SystemModesDto {
+  status: string // "ok" | "static" | "partial" | "unknown"
+  note: string
+  characteristic_latex: string | null
+  modes: RootSetDto | null
+  internal_stability: StabilityDto | null
+}
+
 export interface ResponseEntry {
   latex: string
   partial_fractions_latex: string
@@ -100,7 +108,8 @@ export interface SolveResult {
   transfer_function: TransferFunctionDto
   poles: RootSetDto
   zeros: RootSetDto
-  stability: StabilityDto
+  transfer_stability: StabilityDto
+  system_modes?: SystemModesDto
   responses?: Record<string, ResponseEntry>
   bode?: BodeDto
   simplification?: SimplificationDto

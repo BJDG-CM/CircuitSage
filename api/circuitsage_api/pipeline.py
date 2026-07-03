@@ -24,12 +24,13 @@ from circuitsolver import (
     impulse_response,
     parse,
     pole_zero,
-    stability,
     step_response,
+    system_modes,
     transfer_function,
+    transfer_stability,
     validate_topology,
 )
-from circuitsolver.analysis import PoleZeroResult, RootSet
+from circuitsolver.analysis import PoleZeroResult, RootSet, StabilityResult
 from circuitsolver.complexity import measure_complexity
 from circuitsolver.errors import CircuitError, InverseLaplaceError
 from circuitsolver.laplace import t
@@ -52,6 +53,16 @@ def _serialize_roots(roots: RootSet) -> dict:
             pass  # 기호 근은 latex만
         entries.append(entry)
     return {"complete": roots.complete, "roots": entries}
+
+
+def _serialize_stability(stab: StabilityResult) -> dict:
+    return {
+        "verdict": stab.verdict,
+        "method": stab.method,
+        "conditions_latex": [sp.latex(cond) for cond in stab.conditions],
+        "routh_table_latex": routh_array_latex(stab.routh_table),
+        "notes": list(stab.notes),
+    }
 
 
 def _time_window(pz: PoleZeroResult) -> float:
@@ -142,13 +153,20 @@ def run_solve(netlist: str, options: Mapping | None = None) -> dict:
     if not pz.poles.complete:
         warnings.append("기호 계수로 극점 닫힌형 실패 — 수치 값 대입 시 계산 가능")
 
-    stab = stability(tf)
-    result["stability"] = {
-        "verdict": stab.verdict,
-        "method": stab.method,
-        "conditions_latex": [sp.latex(cond) for cond in stab.conditions],
-        "routh_table_latex": routh_array_latex(stab.routh_table),
-        "notes": list(stab.notes),
+    # 전달함수 안정성: 소거 후 분모만 근거 — 내부 모드와 구분된다
+    result["transfer_stability"] = _serialize_stability(transfer_stability(tf))
+
+    modes = system_modes(circuit)
+    result["system_modes"] = {
+        "status": modes.status,
+        "note": modes.note,
+        "characteristic_latex": (
+            sp.latex(modes.characteristic) if modes.characteristic is not None else None
+        ),
+        "modes": _serialize_roots(modes.modes) if modes.modes is not None else None,
+        "internal_stability": (
+            _serialize_stability(modes.stability) if modes.stability is not None else None
+        ),
     }
 
     if responses_wanted:

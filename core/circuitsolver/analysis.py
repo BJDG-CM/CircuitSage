@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 import sympy as sp
 from sympy.matrices.exceptions import NonInvertibleMatrixError
 
-from .circuit import SOURCE_TYPES, Circuit
+from .circuit import REACTIVE_TYPES, SOURCE_TYPES, Circuit
 from .errors import CircuitError, SingularMatrixError
 from .graph import GROUND, validate_topology
 from .initial import expand_initial_conditions
@@ -51,9 +51,19 @@ def solve_node_voltages(circuit: Circuit, validate: bool = True) -> dict[str, sp
 
 @dataclass(frozen=True)
 class TransferFunction:
+    """H(s) for the selected input/output pair.
+
+    ``denominator`` is the *reduced transfer denominator*: the denominator
+    of H(s) after rational cancellation. It determines the poles visible
+    in this particular transfer function only — internal modes that
+    cancel against the numerator (unobservable/uncontrollable from the
+    chosen ports) do not appear here. It is NOT the circuit's
+    characteristic polynomial; use system_modes() for internal modes.
+    """
+
     expr: sp.Expr
     numerator: sp.Expr
-    denominator: sp.Expr  # characteristic polynomial of the circuit
+    denominator: sp.Expr  # reduced transfer denominator (see docstring)
     output_node: str
     input_source: str
 
@@ -104,9 +114,12 @@ def _root_set(expr: sp.Expr) -> RootSet:
 
 
 def pole_zero(tf: TransferFunction) -> PoleZeroResult:
-    """Poles/zeros of H(s) per design §4.6: exact closed forms where
-    feasible (always for numeric coefficients, degree ≤ 4 for symbolic),
-    numeric nroots() as the numeric fallback."""
+    """Transfer poles/zeros of H(s) per design §4.6: exact closed forms
+    where feasible (always for numeric coefficients, degree ≤ 4 for
+    symbolic), numeric nroots() as the numeric fallback.
+
+    These are the poles of the *reduced* transfer function; internal
+    modes cancelled in H(s) are reported by system_modes() instead."""
     return PoleZeroResult(
         poles=_root_set(tf.denominator),
         zeros=_root_set(tf.numerator),
@@ -269,10 +282,10 @@ def routh_stability(poly: sp.Poly) -> StabilityResult:
     )
 
 
-def stability(tf: TransferFunction) -> StabilityResult:
-    """Stability of H(s) (design §4.6): direct max Re(p) check when the
-    denominator is numeric, Routh–Hurwitz otherwise."""
-    poly = sp.Poly(tf.denominator, s)
+def _stability_of_expr(denominator: sp.Expr) -> StabilityResult:
+    """Stability of a polynomial in s (design §4.6): direct max Re(p)
+    check when the coefficients are numeric, Routh–Hurwitz otherwise."""
+    poly = sp.Poly(denominator, s)
     if poly.degree() <= 0:
         return StabilityResult(
             verdict="stable", method="numeric",
@@ -292,6 +305,122 @@ def stability(tf: TransferFunction) -> StabilityResult:
             notes=(f"max Re(p) = {max(real_parts):.6g}",),
         )
     return routh_stability(poly)
+
+
+def transfer_stability(tf: TransferFunction) -> StabilityResult:
+    """Stability judged from the *reduced transfer denominator* only.
+
+    An internal mode cancelled in H(s) is invisible here: a circuit can
+    be transfer-stable while an internal mode misbehaves. Internal
+    stability comes from system_modes(circuit).stability."""
+    return _stability_of_expr(tf.denominator)
+
+
+# Backward-compatible alias; prefer transfer_stability for clarity.
+stability = transfer_stability
+
+
+# --- System characteristic modes (independent of the chosen H) -------------
+
+
+@dataclass(frozen=True)
+class SystemModes:
+    """Internal natural modes of the circuit, from the MNA system itself.
+
+    status:
+      "ok"      — characteristic extracted; degree = detected dynamic order
+      "static"  — no dynamic modes (characteristic is constant)
+      "partial" — extracted, but some factors may not be physical modes
+      "unknown" — extraction not reliable for this topology
+    """
+
+    characteristic: sp.Expr | None  # polynomial in s, sign-normalized
+    modes: RootSet | None
+    status: str
+    note: str
+    stability: StabilityResult | None
+
+
+def system_modes(circuit: Circuit) -> SystemModes:
+    """Natural modes from det A(s) of the MNA system.
+
+    Method: A(s) entries are rational in s (an inductor contributes the
+    admittance 1/(sL)), so det A(s) is a rational function. cancel()
+    reduces it; the reduced numerator N(s) vanishes exactly where A(s)
+    drops rank — the natural frequencies representable in this MNA
+    admittance formulation. Clearing-denominator artifacts (s^k factors
+    from 1/(sL)) are removed by the same cancellation rather than being
+    reported as modes, and the constant scale/sign is normalized away.
+
+    Honest limits of the formulation, stated in ``note``:
+      * degenerate topologies legitimately reduce the detected order
+        (e.g. two parallel capacitors form one mode);
+      * a state hidden behind an ideal source constraint (an inductor
+        directly across an ideal voltage source) does not appear in
+        det A(s) and cannot be reported here;
+      * if det A(s) is identically zero the pencil is singular and the
+        result is status="unknown" instead of a fabricated answer.
+    """
+    validate_topology(circuit)
+    system = assemble(circuit)
+    if system.A.shape[0] == 0:
+        return SystemModes(None, None, "unknown", "MNA 시스템이 비어 있음", None)
+
+    try:
+        determinant = system.A.det(method="berkowitz")
+    except Exception as exc:  # noqa: BLE001 — surfaced as a structured result
+        return SystemModes(
+            None, None, "unknown", f"det A(s) 계산 실패: {type(exc).__name__}", None
+        )
+
+    numerator, _ = sp.fraction(sp.cancel(sp.together(determinant)))
+    numerator = sp.expand(numerator)
+    if numerator == 0:
+        return SystemModes(
+            None,
+            None,
+            "unknown",
+            "det A(s)가 항등적으로 0 — 이 위상에서는 MNA pencil이 특이해 "
+            "내부 모드를 신뢰성 있게 추출할 수 없음",
+            None,
+        )
+
+    poly = sp.Poly(numerator, s)
+    if poly.degree() <= 0:
+        return SystemModes(
+            sp.Integer(1),
+            RootSet(roots=(), complete=True),
+            "static",
+            "동적 모드 없음 — 특성식이 상수",
+            StabilityResult(
+                verdict="stable", method="numeric", notes=("동특성 없음",)
+            ),
+        )
+
+    if poly.LC().is_negative:
+        poly = sp.Poly(-poly.as_expr(), s)
+    characteristic = poly.as_expr()
+    reactive_count = sum(
+        1 for comp in circuit.components if comp.ctype in REACTIVE_TYPES
+    )
+    degree = poly.degree()
+    note = (
+        f"검출된 동적 차수 {degree} (리액티브 소자 {reactive_count}개). "
+        "축퇴 위상은 차수를 낮출 수 있고, 이상 전원 구속에 가려진 상태"
+        "(예: 이상 전압원에 직결된 인덕터 전류)는 이 정식화에 나타나지 않는다."
+    )
+    status = "ok"
+    if degree > reactive_count:
+        status = "partial"
+        note += " — 차수가 리액티브 소자 수를 초과: 일부 인자는 물리 모드가 아닐 수 있음"
+
+    return SystemModes(
+        characteristic=characteristic,
+        modes=_root_set(characteristic),
+        status=status,
+        note=note,
+        stability=_stability_of_expr(characteristic),
+    )
 
 
 def transfer_function(circuit: Circuit) -> TransferFunction:

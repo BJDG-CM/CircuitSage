@@ -64,7 +64,9 @@ $A x = z$를 풀어 출력 성분을 입력으로 나누면
 \begin{equation*}
 H(s) \;=\; \frac{V_{\mathrm{\VAR{output_node}}}(s)}{\VAR{input_source}(s)} \;=\; \VAR{h_latex}.
 \end{equation*}
-분모 $\VAR{den_latex}$가 이 회로의 특성다항식이다.
+분모 $\VAR{den_latex}$는 유리식 소거 \emph{후}의 전달함수 분모로, 선택한
+입·출력 조합에서 관측되는 극점만 결정한다. 소거되어 사라진 내부 모드는
+아래의 시스템 특성식 절에서 별도로 다룬다.
 
 \section{극점 \(\cdot\) 영점과 안정성}
 \BLOCK{if pole_rows}
@@ -102,6 +104,32 @@ Routh--Hurwitz 표:
 \BLOCK{for note in stability_notes}
 \par\noindent\emph{비고: \VAR{note}}
 \BLOCK{endfor}
+
+\section{시스템 특성식과 내부 모드}
+전달함수 분모는 소거의 결과이므로 입·출력에서 보이지 않는 내부 모드를
+놓칠 수 있다. MNA 행렬식 $\det A(s)$에서 독립적으로 유도한 특성식으로
+내부 모드를 확인한다.
+\BLOCK{if system_char_latex}
+\begin{equation*}
+\VAR{system_char_latex} \;=\; 0
+\end{equation*}
+\BLOCK{endif}
+\BLOCK{if system_mode_rows}
+내부 모드:
+\begin{itemize}
+\BLOCK{for row in system_mode_rows}
+\item $s = \VAR{row.value}$\BLOCK{if row.mult > 1} (중복도 \VAR{row.mult})\BLOCK{endif}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{else}
+\BLOCK{if system_status == "static"}
+동적 내부 모드가 없다.
+\BLOCK{else}
+이 위상에서는 내부 모드를 신뢰성 있게 추출할 수 없다.
+\BLOCK{endif}
+\BLOCK{endif}
+내부 안정성 판정: \textbf{\VAR{internal_stability_text}}.
+\par\noindent\emph{비고: \VAR{system_note}}
 
 \BLOCK{if impulse_latex or step_latex}
 \section{시간응답}

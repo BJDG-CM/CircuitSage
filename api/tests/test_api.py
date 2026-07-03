@@ -25,7 +25,8 @@ class TestSolveHappyPath:
         body = response.json()
         assert body["planarity"]["planar"] is True
         assert body["transfer_function"]["latex"]
-        assert body["stability"]["verdict"] == "stable"
+        assert body["transfer_stability"]["verdict"] == "stable"
+        assert body["system_modes"]["status"] == "ok"
         assert body["poles"]["roots"][0]["re"] == pytest.approx(-1000.0)
         assert "bode" in body
         assert body["bode"]["corners"] == [1000.0]
@@ -60,6 +61,16 @@ class TestSolveHappyPath:
     def test_latex_report_option(self, client):
         body = _solve(client, RC_NUMERIC, latex=True).json()
         assert body["latex_report"].startswith("\\documentclass")
+
+    def test_cancelled_internal_mode_is_reported_separately(self, client):
+        # H(s)=1로 완전 소거되지만 내부 RC 모드는 system_modes에 남아야 한다
+        netlist = "Vin in 0 Vi\nR1 in n R\nC1 n 0 C\n.out V(in) Vin\n"
+        body = _solve(client, netlist).json()
+        assert body["poles"]["roots"] == []
+        modes = body["system_modes"]
+        assert modes["status"] == "ok"
+        assert len(modes["modes"]["roots"]) == 1
+        assert modes["internal_stability"]["verdict"] == "stable"
 
     def test_simplification_steps_reported(self, client):
         netlist = "Vin a 0 Vi\nR1 a 0 1k\nR2 a 0 1k\n.out V(a) Vin\n"

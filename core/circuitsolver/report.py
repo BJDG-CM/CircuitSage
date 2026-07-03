@@ -20,9 +20,10 @@ import sympy as sp
 from .analysis import (
     impulse_response,
     pole_zero,
-    stability,
     step_response,
+    system_modes,
     transfer_function,
+    transfer_stability,
 )
 from .circuit import Circuit, ComponentType
 from .errors import InverseLaplaceError
@@ -115,7 +116,8 @@ def generate_report(
     expansion = expand_initial_conditions(circuit)
     system = assemble(expansion.circuit)
     pz = pole_zero(tf)
-    stab = stability(tf)
+    stab = transfer_stability(tf)
+    modes = system_modes(circuit)
 
     components = [
         {
@@ -184,6 +186,20 @@ def generate_report(
         "stability_method": "Routh–Hurwitz" if stab.method == "routh" else "수치 극점",
         "stability_conditions": [sp.latex(cond) for cond in stab.conditions],
         "stability_notes": [_text(note) for note in stab.notes],
+        "system_status": modes.status,
+        "system_note": _text(modes.note),
+        "system_char_latex": (
+            sp.latex(modes.characteristic) if modes.characteristic is not None else None
+        ),
+        "system_mode_rows": [
+            {"value": sp.latex(root), "mult": mult}
+            for root, mult in (modes.modes.roots if modes.modes is not None else ())
+        ],
+        "internal_stability_text": (
+            _VERDICT_KO.get(modes.stability.verdict, modes.stability.verdict)
+            if modes.stability is not None
+            else "판정 불가"
+        ),
         "impulse_latex": impulse_latex,
         "step_latex": step_latex,
         "impulse_pf": impulse_pf,

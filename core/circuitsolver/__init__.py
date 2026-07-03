@@ -8,6 +8,7 @@ from .analysis import (
     PoleZeroResult,
     RootSet,
     StabilityResult,
+    SystemModes,
     TransferFunction,
     impulse_response,
     pole_zero,
@@ -16,7 +17,9 @@ from .analysis import (
     solve_node_voltages,
     stability,
     step_response,
+    system_modes,
     transfer_function,
+    transfer_stability,
 )
 from .bode import BodeData, bode_data
 from .circuit import Circuit, Component, ComponentType, OutputSpec
@@ -70,6 +73,9 @@ __all__ = [
     "StabilityResult",
     "StampEntry",
     "StampRecord",
+    "SystemModes",
+    "system_modes",
+    "transfer_stability",
     "TimeResponse",
     "TopologyError",
     "TopologyReport",
