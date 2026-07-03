@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-label="CircuitSage — symbolic circuit analysis">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#232946"/>
+      <stop offset="1" stop-color="#171b2c"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b9cf5"/>
+      <stop offset="1" stop-color="#5f74e8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="260" rx="16" fill="url(#bg)"/>
+
+  <!-- 회로 모티프: V — R — C 저역통과 -->
+  <g stroke="#6b7bc4" stroke-width="2.5" fill="none" opacity="0.9">
+    <!-- 전압원 -->
+    <circle cx="120" cy="130" r="22"/>
+    <path d="M111,124 H121 M116,119 V129" stroke-width="2"/>
+    <path d="M111,140 H121" stroke-width="2"/>
+    <!-- 배선: V+ 위로, 상단 레일 -->
+    <path d="M120,108 V60 H240"/>
+    <!-- 저항 지그재그 -->
+    <path d="M240,60 h14 l7,-13 l13,26 l13,-26 l13,26 l13,-26 l10,13 h14"/>
+    <!-- 상단 레일 계속 → 출력 노드 -->
+    <path d="M337,60 H460"/>
+    <!-- 커패시터 -->
+    <path d="M460,60 V104 M446,104 H474 M446,116 H474 M460,116 V166"/>
+    <!-- 하단 귀환 레일 -->
+    <path d="M120,152 V200 H460 M460,166 V200"/>
+  </g>
+  <!-- 접지 -->
+  <g stroke="#6b7bc4" stroke-width="2.5" opacity="0.9">
+    <path d="M290,200 V214 M276,214 H304 M281,221 H299 M287,228 H293"/>
+  </g>
+  <!-- 접점/프로브 -->
+  <circle cx="460" cy="60" r="4.5" fill="#8b9cf5"/>
+  <circle cx="460" cy="200" r="4.5" fill="#8b9cf5"/>
+  <circle cx="460" cy="60" r="11" fill="none" stroke="#e8894a" stroke-width="2.5"/>
+  <text x="480" y="42" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="15" fill="#e8894a">V(out)</text>
+
+  <!-- 워드마크 -->
+  <text x="590" y="118" font-family="system-ui, 'Segoe UI', Roboto, sans-serif" font-size="58" font-weight="700" fill="#f4f5fb">CircuitSage</text>
+  <rect x="593" y="134" width="270" height="4" rx="2" fill="url(#accent)"/>
+  <text x="590" y="168" font-family="system-ui, 'Segoe UI', Roboto, sans-serif" font-size="20" fill="#aab4e8">Symbolic circuit analysis — from netlist to derivation</text>
+
+  <!-- 수식 -->
+  <text x="590" y="212" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="17" fill="#7c8ff0">H(s) = 1 / (1 + sRC)&#160;&#160;&#160;p = −1/RC&#160;&#160;&#160;h(t) = e^(−t/RC)/RC</text>
+</svg>

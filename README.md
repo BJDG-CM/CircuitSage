@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/assets/banner.svg" alt="CircuitSage — symbolic circuit analysis, from netlist to derivation" width="100%" />
+
 # CircuitSage
 
 ### Symbolic circuit analysis, from netlist to derivation
@@ -194,7 +196,11 @@ The `core` package has no web-framework dependency and can be used independently
 The application provides two input modes:
 
 - **Netlist editor** — direct SPICE-like text input with example circuits
-- **Schematic editor** — SVG-based component placement compiled into the same netlist pipeline
+- **Schematic editor** — draw the circuit with real component symbols
+  (drag to place and move, drag wires with automatic L-bends, R/Del
+  shortcuts, junction dots). The drawing is **parsed live into a netlist**
+  on every change — drawn shorts are flagged immediately, and Solve and
+  share links work directly from the drawing with no manual compile step.
 
 Analysis results are organized into seven views:
 
@@ -355,14 +361,18 @@ a killable worker process with a hard timeout and preflight complexity limits.
 | Intent | Trusted single user on localhost | Restricted shared demo, single instance |
 | Complexity limits | Generous, each configurable, `0` disables | Strict (12 components, 24×24 MNA, 6 symbols, 10 kB netlist) |
 | Solve timeout | 30 s default; `0` runs in-process without isolation | Mandatory, clamped to 1–120 s |
-| Rate limiting | Off | 20 solve requests/min per client IP |
+| Rate limiting | Off | 20 solve requests/min per client IP (SQLite-backed, survives restarts) |
 | Share records | No TTL, unbounded | 20 kB payload cap, 7-day TTL, 2 000-row retention with request-triggered cleanup |
 | Errors | Structured codes, no tracebacks | Same, never leaks tracebacks |
 
 Every solve executes in a separate worker process that is killed on timeout —
-SymPy computations cannot be interrupted any other way. The rate limiter is an
-in-memory, single-instance mechanism: it resets on restart and is not shared
-across replicas, which is appropriate for a personal deployment and nothing more.
+SymPy computations cannot be interrupted any other way. The worker is
+**pre-warmed at server startup and reused across requests**, so the spawn cost
+(interpreter + SymPy import) is paid once, not per solve; a timed-out worker is
+killed and a fresh one is warmed immediately. The rate limiter stores its
+sliding window in the SQLite file, so it survives restarts; it remains a
+single-instance mechanism (not shared across replicas), which is appropriate
+for a personal deployment and nothing more.
 
 ## Configuration
 
@@ -390,4 +400,13 @@ across replicas, which is appropriate for a personal deployment and nothing more
 The detailed architecture, mathematical decisions, milestones, and design records are documented in:
 
 **[Symbolic Circuit Solver — Design Document](Symbolic-Circuit-Solver-설계문서.md)**
+
+Measured solver benchmarks and backend-selection evidence:
+**[docs/benchmarks.md](docs/benchmarks.md)**
+
+## Contributing and License
+
+Development setup, test commands, and guidelines are in
+[CONTRIBUTING.md](CONTRIBUTING.md). CircuitSage is released under the
+[MIT License](LICENSE).
 
