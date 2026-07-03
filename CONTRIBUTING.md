@@ -32,6 +32,19 @@ Benchmarks (`python core/benchmarks/bench.py`) are not part of CI; run them
 when touching the solver and update `docs/benchmarks.md` if the numbers or
 backend-selection evidence change.
 
+## Known pitfall: npm lockfile on Windows
+
+Installing a new package on Windows with an existing `node_modules` can drop
+Linux-only optional entries (e.g. `@emnapi/*`) from `package-lock.json`, which
+breaks `npm ci` in CI and Docker. After adding web dependencies, verify:
+
+```powershell
+Select-String -Path web/package-lock.json -Pattern "@emnapi/core" -Quiet
+```
+
+If it returns `False`, delete `web/node_modules` and `web/package-lock.json`
+and run a clean `npm install`.
+
 ## Guidelines
 
 - Keep the dependency direction one-way: `web → api → core`. The `core`
